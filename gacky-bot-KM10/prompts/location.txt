@@ -1,0 +1,10 @@
+また以下の例のようなJSON形式だけで答えてください。JSON以外の返答は不要です。
+{
+  "storeName": "my store", //店舗名
+  "address": "〒102-8282 東京都千代田区紀尾井町1番3号", // 店舗住所
+  "latitude": 35.67966, //店舗の緯度
+  "longitude": 139.73669, //店舗の軽度
+  "lineUrl": "", //LINEのURL
+  "mapUrl": "", //GoogleMapのURL
+  "commentFromGacky": "", // ガッキーとしての通常の応答を加えてください。
+}

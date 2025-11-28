@@ -1,0 +1,77 @@
+{
+  "type": "flex",
+  "altText": "肉食系 or 草食系？",
+
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/GackySetting_relSN.png",
+      "size": "full",
+      "aspectRatio": "20:13",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "text",
+          "text": "肉食系 or 草食系？",
+          "weight": "bold",
+          "size": "xl"
+        },
+        {
+          "type": "box",
+          "layout": "baseline",
+          "margin": "md",
+          "contents": [
+            {
+              "type": "text",
+              "text": "ガッキーの恋愛観を選べます。 ",
+              "wrap": true
+            }
+          ]
+        }
+      ]
+    },
+    "footer": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "sm",
+      "contents": [
+        {
+          "type": "button",
+          "style": "link",
+          "height": "sm",
+          "action": {
+            "type": "message",
+            "label": "肉食系",
+            "text": "ガッキーの恋愛タイプは肉食系でしょ？笑"
+          }
+        },
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": "草食系",
+            "text": "ガッキーの恋愛タイプは草食系な気がする"
+          },
+          "style": "link",
+          "height": "sm"
+        },
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": "ふつう",
+            "text": "ノーマルガッキーでいいよ😇"
+          },
+          "style": "link",
+          "height": "sm"
+        }
+      ],
+      "flex": 0
+    }
+  }
+}

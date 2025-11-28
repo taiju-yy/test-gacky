@@ -1,0 +1,77 @@
+{
+  "type": "flex",
+  "altText": "食事療法 or 運動療法？",
+
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/GackySetting_coaSU.png",
+      "size": "full",
+      "aspectRatio": "20:13",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "text",
+          "text": "食事療法 or 運動療法？",
+          "weight": "bold",
+          "size": "xl"
+        },
+        {
+          "type": "box",
+          "layout": "baseline",
+          "margin": "md",
+          "contents": [
+            {
+              "type": "text",
+              "text": "ガッキーに食事面のサポートか運動面のサポートをお願いできます。 ",
+              "wrap": true
+            }
+          ]
+        }
+      ]
+    },
+    "footer": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "sm",
+      "contents": [
+        {
+          "type": "button",
+          "style": "link",
+          "height": "sm",
+          "action": {
+            "type": "message",
+            "label": "食事療法",
+            "text": "食事で健康になれたらイイと思う"
+          }
+        },
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": "運動療法",
+            "text": "体を動かしながら健康だったらイイな"
+          },
+          "style": "link",
+          "height": "sm"
+        },
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": "ふつう",
+            "text": "バランスよくおねがい😇"
+          },
+          "style": "link",
+          "height": "sm"
+        }
+      ],
+      "flex": 0
+    }
+  }
+}

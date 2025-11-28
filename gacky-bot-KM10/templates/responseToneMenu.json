@@ -1,0 +1,75 @@
+{
+  "type": "flex",
+  "altText": "あっさり or こってり？",
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/gacky_setting_resAK.jpg",
+      "size": "full",
+      "aspectRatio": "4:3",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md",
+      "contents": [
+        {
+          "type": "text",
+          "text": "Gackyの返事の量設定",
+          "wrap": true,
+          "weight": "bold",
+          "size": "xl",
+          "color": "#385A64"
+        },
+        {
+          "type": "text",
+          "text": "Gackyからの返事の量を選んでください",
+          "size": "md",
+          "wrap": true,
+          "color": "#697A83"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "margin": "lg",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "あっさり",
+                "text": "あっさりした返事でいいよ"
+              },
+              "style": "primary",
+              "color": "#F1BD48"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "こってり",
+                "text": "こってり長めの返事が欲しいな❗️"
+              },
+              "style": "primary",
+              "color": "#AB47BC",
+              "margin": "md"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "デフォルトに戻す",
+                "text": "ふつうぐらいでいいよ😇"
+              },
+              "style": "secondary",
+              "margin": "md"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

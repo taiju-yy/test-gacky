@@ -1,0 +1,148 @@
+{
+  "type": "flex",
+  "altText": "現在の応対方法設定",
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/gacky_setting_current.jpg",
+      "size": "full",
+      "aspectRatio": "4:3",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md",
+      "contents": [
+        {
+          "type": "text",
+          "text": "現在のGackyの応対方法",
+          "wrap": true,
+          "weight": "bold",
+          "size": "xl",
+          "color": "#385A64"
+        },
+        {
+          "type": "text",
+          "text": "現在の応対方法は下記のとおりです",
+          "size": "md",
+          "wrap": true,
+          "color": "#697A83"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "margin": "lg",
+          "contents": [
+            {
+              "type": "box",
+              "layout": "baseline",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "返事の量",
+                  "color": "#385A64",
+                  "size": "sm",
+                  "flex": 2
+                },
+                {
+                  "type": "text",
+                  "text": "ふつう",
+                  "wrap": true,
+                  "color": "#697A83",
+                  "size": "sm",
+                  "flex": 5
+                }
+              ]
+            },
+            {
+              "type": "box",
+              "layout": "baseline",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "健康相談",
+                  "color": "#385A64",
+                  "size": "sm",
+                  "flex": 2
+                },
+                {
+                  "type": "text",
+                  "text": "ふつう",
+                  "wrap": true,
+                  "color": "#697A83",
+                  "size": "sm",
+                  "flex": 5
+                }
+              ]
+            },
+            {
+              "type": "box",
+              "layout": "baseline",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "恋愛タイプ",
+                  "color": "#385A64",
+                  "size": "sm",
+                  "flex": 2
+                },
+                {
+                  "type": "text",
+                  "text": "ふつう",
+                  "wrap": true,
+                  "color": "#697A83",
+                  "size": "sm",
+                  "flex": 5
+                }
+              ]
+            },
+            {
+              "type": "box",
+              "layout": "baseline",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "話し方",
+                  "color": "#385A64",
+                  "size": "sm",
+                  "flex": 2
+                },
+                {
+                  "type": "text",
+                  "text": "ふつう",
+                  "wrap": true,
+                  "color": "#697A83",
+                  "size": "sm",
+                  "flex": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "footer": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": "設定メニューに戻る",
+            "text": "応対方法を変える"
+          },
+          "style": "primary",
+          "color": "#4C9ED9"
+        }
+      ]
+    }
+  }
+}

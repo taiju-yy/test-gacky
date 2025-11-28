@@ -1,0 +1,75 @@
+{
+  "type": "flex",
+  "altText": "丁寧語 or タメ口の設定",
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/gacky_setting_polTT.jpg",
+      "size": "full",
+      "aspectRatio": "4:3",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md",
+      "contents": [
+        {
+          "type": "text",
+          "text": "Gackyの話し方設定",
+          "wrap": true,
+          "weight": "bold",
+          "size": "xl",
+          "color": "#385A64"
+        },
+        {
+          "type": "text",
+          "text": "Gackyの言葉遣いを選んでください",
+          "size": "md",
+          "wrap": true,
+          "color": "#697A83"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "margin": "lg",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "丁寧語で話してほしい",
+                "text": "丁寧語で話してほしいです！"
+              },
+              "style": "primary",
+              "color": "#4C9ED9"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "タメ口で話してほしい",
+                "text": "タメ口で話してほしいな！"
+              },
+              "style": "primary",
+              "color": "#FFA737",
+              "margin": "md"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "デフォルトに戻す",
+                "text": "いつも通りでいいよ😇"
+              },
+              "style": "secondary",
+              "margin": "md"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

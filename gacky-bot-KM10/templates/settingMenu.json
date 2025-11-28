@@ -1,0 +1,114 @@
+{
+  "type": "flex",
+  "altText": "設定メニュー",
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/gacky_setting_top.jpg",
+      "size": "full",
+      "aspectRatio": "4:3",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md",
+      "contents": [
+        {
+          "type": "text",
+          "text": "Gackyの設定",
+          "wrap": true,
+          "weight": "bold",
+          "size": "xl",
+          "color": "#385A64"
+        },
+        {
+          "type": "text",
+          "text": "応対方法を選んでください",
+          "size": "md",
+          "wrap": true,
+          "color": "#697A83"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "margin": "lg",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "師匠ガッキー 🔥",
+                "text": "師匠ガッキーでお願い！"
+              },
+              "style": "primary",
+              "color": "#FF6B6B"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "保健室ガッキー 🌿",
+                "text": "保健室ガッキーでお願い！"
+              },
+              "style": "primary",
+              "color": "#16C79A",
+              "margin": "md"
+            },
+            {
+              "type": "separator",
+              "margin": "lg"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "あっさり or こってり",
+                "text": "あっさり or こってり"
+              },
+              "style": "secondary",
+              "margin": "lg"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "丁寧語 or タメ口",
+                "text": "丁寧語 or タメ口"
+              },
+              "style": "secondary",
+              "margin": "md"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "スパルタ or 癒し系",
+                "text": "スパルタ or 癒し系"
+              },
+              "style": "secondary",
+              "margin": "md"
+            },
+            {
+              "type": "separator",
+              "margin": "lg"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "現在の設定確認",
+                "text": "今の応対方法を教えて"
+              },
+              "style": "primary",
+              "color": "#4C9ED9",
+              "margin": "lg"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SQS Queue for LINE Bot Broadcast Messages'
+
+Resources:
+  # Main SQS Queue
+  BroadcastMessageQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: gacky-bot-broadcast-queue
+      VisibilityTimeout: 300  # 5 minutes, should match Lambda timeout
+      MessageRetentionPeriod: 1209600  # 14 days (maximum)
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt BroadcastDeadLetterQueue.Arn
+        maxReceiveCount: 5  # Number of processing attempts before sending to DLQ
+      # Optional encryption with KMS
+      # KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Project
+          Value: GackyBot
+  
+  # Dead Letter Queue for failed messages
+  BroadcastDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: gacky-bot-broadcast-dlq
+      MessageRetentionPeriod: 1209600  # 14 days (maximum)
+      # Optional encryption with KMS
+      # KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Project
+          Value: GackyBot
+
+  # IAM Role for Lambda to access SQS
+  LambdaSQSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:SendMessageBatch
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                  - sqs:DeleteMessageBatch
+                Resource:
+                  - !GetAtt BroadcastMessageQueue.Arn
+                  - !GetAtt BroadcastDeadLetterQueue.Arn
+
+Outputs:
+  QueueUrl:
+    Description: URL of the SQS Queue
+    Value: !Ref BroadcastMessageQueue
+    Export:
+      Name: GackyBotBroadcastQueueUrl
+  
+  QueueArn:
+    Description: ARN of the SQS Queue
+    Value: !GetAtt BroadcastMessageQueue.Arn
+    Export:
+      Name: GackyBotBroadcastQueueArn
+  
+  DeadLetterQueueUrl:
+    Description: URL of the Dead Letter Queue
+    Value: !Ref BroadcastDeadLetterQueue
+    Export:
+      Name: GackyBotBroadcastDLQUrl
+  
+  DeadLetterQueueArn:
+    Description: ARN of the Dead Letter Queue
+    Value: !GetAtt BroadcastDeadLetterQueue.Arn
+    Export:
+      Name: GackyBotBroadcastDLQArn
+  
+  LambdaRoleArn:
+    Description: ARN of the Lambda Role
+    Value: !GetAtt LambdaSQSRole.Arn
+    Export:
+      Name: GackyBotLambdaSQSRoleArn

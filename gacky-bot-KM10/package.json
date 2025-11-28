@@ -1,0 +1,22 @@
+{
+  "name": "gacky-bot-km10",
+  "version": "1.0.0",
+  "description": "GackyBot for Kanazawa Marathon 10",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Taiju Suzuki",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.29.1",
+    "@aws-sdk/client-dynamodb": "^3.670.0",
+    "@aws-sdk/client-lambda": "^3.670.0",
+    "@aws-sdk/client-s3": "^3.673.0",
+    "@aws-sdk/lib-dynamodb": "^3.670.0",
+    "@aws-sdk/s3-request-presigner": "^3.673.0",
+    "@line/bot-sdk": "^9.4.1",
+    "moment-timezone": "^0.5.46",
+    "sharp": "^0.33.5"
+  }
+}

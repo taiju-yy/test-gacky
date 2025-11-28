@@ -1,0 +1,75 @@
+{
+  "type": "flex",
+  "altText": "スパルタ or 癒し系？",
+  "contents": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/gacky_setting_attSI.jpg",
+      "size": "full",
+      "aspectRatio": "4:3",
+      "aspectMode": "cover"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md",
+      "contents": [
+        {
+          "type": "text",
+          "text": "ガッキーの対応強度設定",
+          "wrap": true,
+          "weight": "bold",
+          "size": "xl",
+          "color": "#385A64"
+        },
+        {
+          "type": "text",
+          "text": "ガッキーの対応の強さを選んでくださいね",
+          "size": "md",
+          "wrap": true,
+          "color": "#697A83"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "margin": "lg",
+          "contents": [
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "スパルタ対応がいい",
+                "text": "ガッキーにはスパルタ対応してほしい！"
+              },
+              "style": "primary",
+              "color": "#E94560"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "癒し系対応がいい",
+                "text": "ガッキーには癒し系対応でお願いしたいです"
+              },
+              "style": "primary",
+              "color": "#16C79A",
+              "margin": "md"
+            },
+            {
+              "type": "button",
+              "action": {
+                "type": "message",
+                "label": "デフォルトに戻す",
+                "text": "普通の対応でいいよ😊"
+              },
+              "style": "secondary",
+              "margin": "md"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
