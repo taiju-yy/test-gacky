@@ -320,7 +320,8 @@ async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
     // 追加のメタデータがある場合、metadata オブジェクトに移動
     const messageForStorage = { 
       role: truncatedMessage.role, 
-      content: truncatedMessage.content 
+      content: truncatedMessage.content,
+      timestamp: newTimestamp  // メッセージごとにタイムスタンプを追加
     };
     
     // metadata オブジェクトの作成
@@ -493,10 +494,14 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
     
     // ブロードキャストメッセージを追加（新しい構造で）
     messages.forEach((msg, index) => {
+      // 各メッセージのタイムスタンプを生成（順番を保持するために小さなオフセットを追加）
+      const msgTimestamp = new Date(new Date(newTimestamp).getTime() + index * 100).toISOString();
+      
       if (index === 0 && (newMessages.length === 0 || newMessages[newMessages.length - 1].role === 'assistant')) {
         newMessages.push({ 
           role: 'user', 
           content: 'ブロードキャストメッセージを受信しました。',
+          timestamp: msgTimestamp,  // メッセージごとにタイムスタンプを追加
           metadata: {
             broadcastId: messageId,
             systemGenerated: true
@@ -509,9 +514,12 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
         content = `[${msg.messageType.toUpperCase()}] ${msg.message || ''}`;
       }
       
+      // assistantメッセージのタイムスタンプ
+      const assistantMsgTimestamp = new Date(new Date(newTimestamp).getTime() + index * 100 + 50).toISOString();
       newMessages.push({ 
         role: 'assistant', 
         content: content,
+        timestamp: assistantMsgTimestamp,  // メッセージごとにタイムスタンプを追加
         metadata: {
           broadcastId: messageId,
           systemGenerated: true
@@ -519,9 +527,12 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
       });
       
       if (index < messages.length - 1) {
+        // 続きメッセージのタイムスタンプ
+        const continueMsgTimestamp = new Date(new Date(newTimestamp).getTime() + index * 100 + 75).toISOString();
         newMessages.push({ 
           role: 'user', 
           content: '続けて',
+          timestamp: continueMsgTimestamp,  // メッセージごとにタイムスタンプを追加
           metadata: {
             broadcastId: messageId,
             systemGenerated: true
