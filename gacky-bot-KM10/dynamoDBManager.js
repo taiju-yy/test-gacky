@@ -16,6 +16,7 @@ const client = new DynamoDBClient();
 const dynamoDB = DynamoDBDocumentClient.from(client);
 const table = process.env.NAME_TABLE;
 const tableCoupon = process.env.TABLE_COUPON_MANAGEMENT || "couponManagementTable";
+const tableBroadcastLogs = process.env.TABLE_BROADCAST_LOGS || "gacky-bot-broadcast-logs";
 
 // メッセージハッシュ生成ヘルパー関数
 function generateMessageHash(messages) {
@@ -682,6 +683,173 @@ async function getSystemContent(infoKey) {
   }
 }
 
+// ========================================
+// Broadcast Logs 関連関数
+// ========================================
+
+/**
+ * ブロードキャスト配信ログを作成
+ * @param {Object} logData - ログデータ
+ * @param {string} logData.broadcastId - ブロードキャストID
+ * @param {string} logData.title - 配信タイトル（任意）
+ * @param {Array} logData.messages - 配信メッセージ
+ * @param {number} logData.targetUserCount - 配信対象ユーザー数
+ * @returns {Object} 作成結果
+ */
+async function createBroadcastLog(logData) {
+  try {
+    const timestamp = new Date().toISOString();
+    // TTL: 1年後に自動削除（秒単位のUnixタイムスタンプ）
+    const ttl = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
+    
+    const item = {
+      broadcastId: logData.broadcastId,
+      timestamp: timestamp,
+      title: logData.title || null,
+      messages: logData.messages || [],
+      targetUserCount: logData.targetUserCount || 0,
+      successCount: 0,
+      failureCount: 0,
+      skippedCount: 0,
+      status: 'queued',
+      createdAt: timestamp,
+      completedAt: null,
+      ttl: ttl
+    };
+    
+    const params = {
+      TableName: tableBroadcastLogs,
+      Item: item
+    };
+    
+    await dynamoDB.send(new PutCommand(params));
+    console.log(`Broadcast log created: ${logData.broadcastId}`);
+    
+    return { status: 'success', broadcastId: logData.broadcastId, timestamp };
+  } catch (error) {
+    console.error('Error creating broadcast log:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * ブロードキャスト配信ログを更新（配信結果の集計）
+ * @param {string} broadcastId - ブロードキャストID
+ * @param {string} timestamp - 作成時のタイムスタンプ
+ * @param {Object} updateData - 更新データ
+ * @returns {Object} 更新結果
+ */
+async function updateBroadcastLog(broadcastId, timestamp, updateData) {
+  try {
+    const updateExpressions = [];
+    const expressionAttributeNames = {};
+    const expressionAttributeValues = {};
+    
+    if (updateData.successCount !== undefined) {
+      updateExpressions.push('successCount = successCount + :successInc');
+      expressionAttributeValues[':successInc'] = updateData.successCount;
+    }
+    
+    if (updateData.failureCount !== undefined) {
+      updateExpressions.push('failureCount = failureCount + :failureInc');
+      expressionAttributeValues[':failureInc'] = updateData.failureCount;
+    }
+    
+    if (updateData.skippedCount !== undefined) {
+      updateExpressions.push('skippedCount = skippedCount + :skippedInc');
+      expressionAttributeValues[':skippedInc'] = updateData.skippedCount;
+    }
+    
+    if (updateData.status) {
+      updateExpressions.push('#status = :status');
+      expressionAttributeNames['#status'] = 'status';
+      expressionAttributeValues[':status'] = updateData.status;
+    }
+    
+    if (updateData.completedAt) {
+      updateExpressions.push('completedAt = :completedAt');
+      expressionAttributeValues[':completedAt'] = updateData.completedAt;
+    }
+    
+    if (updateExpressions.length === 0) {
+      return { status: 'skipped', reason: 'no_updates' };
+    }
+    
+    const params = {
+      TableName: tableBroadcastLogs,
+      Key: {
+        broadcastId: broadcastId,
+        timestamp: timestamp
+      },
+      UpdateExpression: 'SET ' + updateExpressions.join(', '),
+      ExpressionAttributeValues: expressionAttributeValues
+    };
+    
+    if (Object.keys(expressionAttributeNames).length > 0) {
+      params.ExpressionAttributeNames = expressionAttributeNames;
+    }
+    
+    await dynamoDB.send(new UpdateCommand(params));
+    console.log(`Broadcast log updated: ${broadcastId}`);
+    
+    return { status: 'success' };
+  } catch (error) {
+    console.error('Error updating broadcast log:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * ブロードキャスト配信ログを取得
+ * @param {string} broadcastId - ブロードキャストID
+ * @returns {Object|null} ログデータ
+ */
+async function getBroadcastLog(broadcastId) {
+  try {
+    const params = {
+      TableName: tableBroadcastLogs,
+      KeyConditionExpression: 'broadcastId = :broadcastId',
+      ExpressionAttributeValues: {
+        ':broadcastId': broadcastId
+      },
+      ScanIndexForward: false,
+      Limit: 1
+    };
+    
+    const data = await dynamoDB.send(new QueryCommand(params));
+    return data.Items && data.Items.length > 0 ? data.Items[0] : null;
+  } catch (error) {
+    console.error('Error getting broadcast log:', error);
+    return null;
+  }
+}
+
+/**
+ * 最近のブロードキャスト配信ログを取得（分析用）
+ * @param {number} limit - 取得件数（デフォルト: 50）
+ * @returns {Array} ログデータの配列
+ */
+async function getRecentBroadcastLogs(limit = 50) {
+  try {
+    const params = {
+      TableName: tableBroadcastLogs,
+      Limit: limit
+    };
+    
+    const data = await dynamoDB.send(new ScanCommand(params));
+    
+    // timestampでソート（降順）
+    const sortedItems = (data.Items || []).sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    
+    return sortedItems;
+  } catch (error) {
+    console.error('Error getting recent broadcast logs:', error);
+    return [];
+  }
+}
+
 // 外部からの利用を可能にするために関数をエクスポート
 module.exports = {
   saveOrUpdateMessage,
@@ -698,5 +866,10 @@ module.exports = {
   updateCoachingStyle,
   updateAttitudeTone,
   backupToS3,
-  truncateMessage
+  truncateMessage,
+  // Broadcast Logs
+  createBroadcastLog,
+  updateBroadcastLog,
+  getBroadcastLog,
+  getRecentBroadcastLogs
 };
