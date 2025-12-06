@@ -577,32 +577,32 @@ async function defaultAction(props) {
 function sanitizeMarkdown(text) {
   if (!text) return text;
   
-  // **太字** を「」に置換
-  text = text.replace(/\*\*([^*]+)\*\*/g, '「$1」');
+  // **太字** を「」に置換(空の場合は削除)
+  text = text.replace(/\*\*([^*]*)\*\*/g, (match, p1) => p1.trim() ? `「${p1}」` : '');
   
-  // *イタリック* を削除
-  text = text.replace(/\*([^*]+)\*/g, '$1');
+  // *イタリック* を削除(空でも削除)
+  text = text.replace(/\*([^*]*)\*/g, '$1');
   
-  // __下線__ を「」に置換
-  text = text.replace(/__([^_]+)__/g, '「$1」');
+  // __下線__ を「」に置換(空の場合は削除)
+  text = text.replace(/__([^_]*)__/g, (match, p1) => p1.trim() ? `「${p1}」` : '');
   
-  // _イタリック_ を削除
-  text = text.replace(/_([^_]+)_/g, '$1');
+  // _イタリック_ を削除(空でも削除)
+  text = text.replace(/_([^_]*)_/g, '$1');
   
   // ###見出し を削除
   text = text.replace(/^#{1,6}\s+/gm, '');
   
-  // - リスト記号を・に置換（行頭のみ）
+  // - リスト記号を・に置換(行頭のみ)
   text = text.replace(/^-\s+/gm, '・');
   
-  // * リスト記号を・に置換（行頭のみ）
+  // * リスト記号を・に置換(行頭のみ)
   text = text.replace(/^\*\s+/gm, '・');
   
-  // `コード` を「」に置換
-  text = text.replace(/`([^`]+)`/g, '「$1」');
+  // `コード` を「」に置換(空の場合は削除)
+  text = text.replace(/`([^`]*)`/g, (match, p1) => p1.trim() ? `「${p1}」` : '');
   
-  // [リンクテキスト](URL) をリンクテキストのみに
-  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  // [リンクテキスト](URL) をリンクテキストのみに(空の場合は削除)
+  text = text.replace(/\[([^\]]*)\]\([^)]+\)/g, (match, p1) => p1.trim() ? p1 : '');
   
   return text;
 }
