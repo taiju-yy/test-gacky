@@ -1,12 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'SQS Queue for LINE Bot Broadcast Messages'
+Description: 'SQS Queue and DynamoDB Tables for LINE Bot Broadcast Messages'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment (dev or prod)
 
 Resources:
   # Main SQS Queue
   BroadcastMessageQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: gacky-bot-broadcast-queue
+      QueueName: !Sub 'gacky-bot-broadcast-queue-${Environment}'
       VisibilityTimeout: 300  # 5 minutes, should match Lambda timeout
       MessageRetentionPeriod: 1209600  # 14 days (maximum)
       RedrivePolicy:
@@ -18,11 +27,36 @@ Resources:
         - Key: Project
           Value: GackyBot
   
+  # Broadcast Logs Table for tracking broadcast deliveries
+  BroadcastLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-bot-broadcast-logs-${Environment}'
+      BillingMode: PAY_PER_REQUEST  # On-demand pricing
+      AttributeDefinitions:
+        - AttributeName: broadcastId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: broadcastId
+          KeyType: HASH  # Partition key
+        - AttributeName: timestamp
+          KeyType: RANGE  # Sort key
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: GackyBot
+        - Key: Purpose
+          Value: BroadcastLogs
+
   # Dead Letter Queue for failed messages
   BroadcastDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: gacky-bot-broadcast-dlq
+      QueueName: !Sub 'gacky-bot-broadcast-dlq-${Environment}'
       MessageRetentionPeriod: 1209600  # 14 days (maximum)
       # Optional encryption with KMS
       # KmsMasterKeyId: alias/aws/sqs
@@ -60,8 +94,32 @@ Resources:
                 Resource:
                   - !GetAtt BroadcastMessageQueue.Arn
                   - !GetAtt BroadcastDeadLetterQueue.Arn
+        - PolicyName: BroadcastLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt BroadcastLogsTable.Arn
 
 Outputs:
+  BroadcastLogsTableName:
+    Description: Name of the Broadcast Logs Table
+    Value: !Ref BroadcastLogsTable
+    Export:
+      Name: GackyBotBroadcastLogsTableName
+  
+  BroadcastLogsTableArn:
+    Description: ARN of the Broadcast Logs Table
+    Value: !GetAtt BroadcastLogsTable.Arn
+    Export:
+      Name: GackyBotBroadcastLogsTableArn
+
   QueueUrl:
     Description: URL of the SQS Queue
     Value: !Ref BroadcastMessageQueue

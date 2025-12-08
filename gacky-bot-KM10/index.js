@@ -79,7 +79,9 @@ const keywordShowAllSettings = '今の応対方法を教えて';
 const {
   deleteUser,
   addBroadcastConversation,
-  getCouponStatus
+  getCouponStatus,
+  createBroadcastLog,
+  updateBroadcastLog
 } = require('./dynamoDBManager');
 
 // Modified handler to support SQS messages
@@ -293,24 +295,54 @@ async function broadcastHandler(event) {
     const broadcastId = event.broadcastId || `broadcast_${new Date().toISOString()}_${require('crypto').randomBytes(4).toString('hex')}`;
     console.log(`ブロードキャストID: ${broadcastId}`);
 
-    const { messages, sendToAll = false, userIds = [] } = event;
+    const { messages, sendToAll = false, userIds = [], title = null } = event;
 
     // ユーザーID取得
     let targetUserIds = userIds;
     console.log('Target user IDs count:', targetUserIds.length);
 
+    // ブロードキャストログを作成
+    const logResult = await createBroadcastLog({
+      broadcastId,
+      title,
+      messages,
+      targetUserCount: targetUserIds.length
+    });
+    
+    if (logResult.status === 'error') {
+      console.warn('Failed to create broadcast log, continuing with broadcast:', logResult.error);
+    }
+    const logTimestamp = logResult.timestamp;
+
     // SQSに送信
-    const results = await sendBroadcastToSQS(targetUserIds, messages, broadcastId);
+    const results = await sendBroadcastToSQS(targetUserIds, messages, broadcastId, 10, logTimestamp);
+    
+    const queuedCount = results.filter(r => r.status === 'queued').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
+    
     console.log('SQS queue results summary:',
       `Total: ${results.length}, ` +
-      `Successful: ${results.filter(r => r.status === 'queued').length}, ` +
-      `Failed: ${results.filter(r => r.status === 'error').length}`);
+      `Successful: ${queuedCount}, ` +
+      `Failed: ${errorCount}`);
+
+    // ブロードキャストログのステータスを更新（キュー投入完了）
+    if (logTimestamp) {
+      await updateBroadcastLog(broadcastId, logTimestamp, {
+        status: 'processing'
+      });
+    }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         message: "Broadcast messages queued for processing",
         broadcastId,
+        logTimestamp,
+        summary: {
+          total: results.length,
+          queued: queuedCount,
+          failed: errorCount
+        },
         results
       })
     };
@@ -323,7 +355,7 @@ async function broadcastHandler(event) {
   }
 }
 
-async function sendBroadcastToSQS(userIds, messages, broadcastId, batchSize = 10) {
+async function sendBroadcastToSQS(userIds, messages, broadcastId, batchSize = 10, logTimestamp = null) {
   const queueUrl = process.env.SQS_QUEUE_URL;
 
   if (!queueUrl) {
@@ -340,6 +372,7 @@ async function sendBroadcastToSQS(userIds, messages, broadcastId, batchSize = 10
           userId,
           messages,
           broadcastId,  // 追加: 冪等性確保のため
+          logTimestamp,  // 追加: ブロードキャストログ更新用
           timestamp: new Date().toISOString()  // 追加: デバッグに役立つタイムスタンプ
         }),
         // 再試行ポリシーを設定
@@ -420,15 +453,18 @@ async function sqsHandler(event, context) {
 
     const execEnv = process.env.ENV_EXEC || 'dev';
     const results = [];
+    
+    // ブロードキャストログ更新用の集計（broadcastId + logTimestamp ごとに集計）
+    const logUpdates = {};
 
     // メッセージごとに処理
     for (const record of event.Records) {
       try {
         const body = JSON.parse(record.body);
-        const { userId, messages, broadcastId, timestamp } = body;
+        const { userId, messages, broadcastId, logTimestamp, timestamp } = body;
 
         console.log(`Processing message for user ${userId} in environment: ${execEnv}`);
-        console.log(`BroadcastId: ${broadcastId}, Original timestamp: ${timestamp}`);
+        console.log(`BroadcastId: ${broadcastId}, LogTimestamp: ${logTimestamp}, Original timestamp: ${timestamp}`);
 
         // メッセージにタグをつける（開発環境用）
         const taggedMessages = messages.map(msg => {
@@ -451,6 +487,28 @@ async function sqsHandler(event, context) {
           environment: execEnv,
           broadcastId
         });
+        
+        // ブロードキャストログ更新用の集計
+        if (broadcastId && logTimestamp) {
+          const logKey = `${broadcastId}|${logTimestamp}`;
+          if (!logUpdates[logKey]) {
+            logUpdates[logKey] = {
+              broadcastId,
+              logTimestamp,
+              successCount: 0,
+              failureCount: 0,
+              skippedCount: 0
+            };
+          }
+          
+          if (result.status === 'success') {
+            logUpdates[logKey].successCount++;
+          } else if (result.status === 'skipped') {
+            logUpdates[logKey].skippedCount++;
+          } else {
+            logUpdates[logKey].failureCount++;
+          }
+        }
       } catch (error) {
         console.error(`Error processing SQS message:`, error);
         results.push({
@@ -458,6 +516,21 @@ async function sqsHandler(event, context) {
           message: error.message,
           record: record.messageId
         });
+      }
+    }
+    
+    // ブロードキャストログを更新
+    for (const logKey of Object.keys(logUpdates)) {
+      const update = logUpdates[logKey];
+      try {
+        await updateBroadcastLog(update.broadcastId, update.logTimestamp, {
+          successCount: update.successCount,
+          failureCount: update.failureCount,
+          skippedCount: update.skippedCount
+        });
+        console.log(`Updated broadcast log for ${update.broadcastId}: success=${update.successCount}, failed=${update.failureCount}, skipped=${update.skippedCount}`);
+      } catch (logError) {
+        console.error(`Failed to update broadcast log for ${update.broadcastId}:`, logError);
       }
     }
 
