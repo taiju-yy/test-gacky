@@ -105,11 +105,11 @@ async function defaultHandler(event, context) {
     console.log("署名認証成功");
     if (parsedBody.events.length === 0) {
       // Webhook URLの検証リクエストの場合
-      context.succeed({
+      return {
         statusCode: 200,
         headers: { "x-line-status": "OK" },
         body: '{"result":"connect check"}',
-      });
+      };
     } else {
       try {
         // ブロックや友だち(再)登録の場合
@@ -240,11 +240,18 @@ async function defaultHandler(event, context) {
             }
 
             for (const action of actions) {
-              await action({ context, parsedBody, userId, messageType, text });
+              const result = await action({ context, parsedBody, userId, messageType, text });
+              if (result) return result;
             }
           default:
             break;
         }
+        // 正常終了
+        return {
+          statusCode: 200,
+          headers: { "x-line-status": "OK" },
+          body: '{"result":"completed"}',
+        };
       } catch (error) {
         console.log("メッセージ取得エラー: ", error);
 
@@ -261,20 +268,20 @@ async function defaultHandler(event, context) {
         const replyToken = parsedBody.events[0].replyToken;
 
         await client.replyMessage({ replyToken, messages: errorMessage })
-        context.fail({
+        return {
           statusCode: 500,
           headers: { "Content-Type": "application/json" },
           body: '{"result":"error"}'
-        });
+        };
       }
     }
   } else {
     console.log("署名認証エラー");
-    context.fail({
+    return {
       statusCode: 401,
       headers: { "Content-Type": "application/json" },
       body: '{"result":"unauthorized"}'
-    });
+    };
   }
 };
 

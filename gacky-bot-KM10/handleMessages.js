@@ -52,11 +52,11 @@ async function commonAction(props, messages) {
   const replyToken = parsedBody.events[0].replyToken;
   await client.replyMessage({ replyToken, messages });
 
-  context.succeed({
+  return {
     statusCode: 200,
     headers: { "x-line-status": "OK" },
     body: '{"result":"completed"}',
-  });
+  };
 }
 
 async function couponAction(props) {
@@ -76,12 +76,11 @@ async function couponAction(props) {
 
 // 何も行わず、200コードだけ返す
 function doNothingAction(props) {
-  const { context } = props;
-  context.succeed({
+  return {
     statusCode: 200,
     headers: { "x-line-status": "OK" },
     body: '{"result":"skipped"}',
-  });
+  };
 }
 
 // 設定メニューを返信
@@ -381,11 +380,11 @@ async function handleStoreCommandAction(props) {
       messages: [response]
     });
 
-    context.succeed({
+    return {
       statusCode: 200,
       headers: { "x-line-status": "OK" },
       body: '{"result":"completed"}'
-    });
+    };
   } catch (error) {
     console.error('Store selection error:', error);
     throw error;
@@ -414,11 +413,11 @@ async function handlePostbackAction(props) {
         messages: [response]
       });
 
-      context.succeed({
+      return {
         statusCode: 200,
         headers: { "x-line-status": "OK" },
         body: '{"result":"completed"}'
-      });
+      };
     } catch (error) {
       console.error('Store selection error:', error);
       throw error;
@@ -566,11 +565,11 @@ async function defaultAction(props) {
   const replyToken = parsedBody.events[0].replyToken;
 
   await client.replyMessage({ replyToken, messages: replyMessages });
-  context.succeed({
+  return {
     statusCode: 200,
     headers: { "x-line-status": "OK" },
     body: '{"result":"completed"}',
-  });
+  };
 }
 
 // マークダウン記号を除去または置換する関数
