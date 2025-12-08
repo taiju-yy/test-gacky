@@ -1,12 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'SQS Queue for LINE Bot Broadcast Messages'
+Description: 'SQS Queue and DynamoDB Tables for LINE Bot Broadcast Messages'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment (dev or prod)
 
 Resources:
   # Main SQS Queue
   BroadcastMessageQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: gacky-bot-broadcast-queue
+      QueueName: !Sub 'gacky-bot-broadcast-queue-${Environment}'
       VisibilityTimeout: 300  # 5 minutes, should match Lambda timeout
       MessageRetentionPeriod: 1209600  # 14 days (maximum)
       RedrivePolicy:
@@ -22,7 +31,7 @@ Resources:
   BroadcastLogsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: gacky-bot-broadcast-logs
+      TableName: !Sub 'gacky-bot-broadcast-logs-${Environment}'
       BillingMode: PAY_PER_REQUEST  # On-demand pricing
       AttributeDefinitions:
         - AttributeName: broadcastId
@@ -47,7 +56,7 @@ Resources:
   BroadcastDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: gacky-bot-broadcast-dlq
+      QueueName: !Sub 'gacky-bot-broadcast-dlq-${Environment}'
       MessageRetentionPeriod: 1209600  # 14 days (maximum)
       # Optional encryption with KMS
       # KmsMasterKeyId: alias/aws/sqs
