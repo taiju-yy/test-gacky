@@ -15,7 +15,8 @@ const {
   updateRelationshipTone,
   updateCoachingStyle,
   updatePolitenessTone,
-  updateAttitudeTone
+  updateAttitudeTone,
+  updateUserActivitySummary
 } = require('./dynamoDBManager');
 const {
   prescriptionFlow,
@@ -526,6 +527,9 @@ async function defaultAction(props) {
       content: assistantMessage,
       systemGenerated: false // AIの応答はsystemGeneratedではない（ユーザーとの会話の一部）
     });
+    
+    // ユーザーアクティビティサマリーを更新（MAU計算用）
+    await updateUserActivitySummary(userId);
   }
 
   // LINEに応答を返す
