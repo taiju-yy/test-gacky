@@ -17,6 +17,7 @@ const dynamoDB = DynamoDBDocumentClient.from(client);
 const table = process.env.NAME_TABLE;
 const tableCoupon = process.env.TABLE_COUPON_MANAGEMENT || "couponManagementTable";
 const tableBroadcastLogs = process.env.TABLE_BROADCAST_LOGS || "gacky-bot-broadcast-logs";
+const tableUserActivitySummary = process.env.TABLE_USER_ACTIVITY_SUMMARY || "gacky-bot-user-activity-summary";
 
 // メッセージハッシュ生成ヘルパー関数
 function generateMessageHash(messages) {
@@ -850,6 +851,168 @@ async function getRecentBroadcastLogs(limit = 50) {
   }
 }
 
+// ========================================
+// User Activity Summary 関連関数
+// ========================================
+
+/**
+ * ユーザーアクティビティサマリーを更新（ユーザーからのメッセージ時に呼び出し）
+ * @param {string} userId - ユーザーID
+ * @param {string} messageTimestamp - メッセージのタイムスタンプ（ISO 8601）
+ * @returns {Object} 更新結果
+ */
+async function updateUserActivitySummary(userId, messageTimestamp = null) {
+  try {
+    const now = messageTimestamp ? new Date(messageTimestamp) : new Date();
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const timestampStr = now.toISOString();
+    
+    // DynamoDB UpdateExpressionを使用してアトミックに更新
+    const params = {
+      TableName: tableUserActivitySummary,
+      Key: {
+        userId: userId,
+        yearMonth: yearMonth
+      },
+      UpdateExpression: `
+        SET messageCount = if_not_exists(messageCount, :zero) + :one,
+            lastMessageAt = :timestamp,
+            updatedAt = :timestamp,
+            firstMessageAt = if_not_exists(firstMessageAt, :timestamp)
+        ADD activeDates :dateSet
+      `,
+      ExpressionAttributeValues: {
+        ':zero': 0,
+        ':one': 1,
+        ':timestamp': timestampStr,
+        ':dateSet': new Set([dateStr])
+      },
+      ReturnValues: 'ALL_NEW'
+    };
+    
+    const result = await dynamoDB.send(new UpdateCommand(params));
+    
+    // activeDatesのサイズからconversationDaysを計算して更新
+    const activeDatesCount = result.Attributes.activeDates ? 
+      (result.Attributes.activeDates.size || result.Attributes.activeDates.length || 0) : 0;
+    
+    // conversationDaysを別途更新
+    const updateDaysParams = {
+      TableName: tableUserActivitySummary,
+      Key: {
+        userId: userId,
+        yearMonth: yearMonth
+      },
+      UpdateExpression: 'SET conversationDays = :days',
+      ExpressionAttributeValues: {
+        ':days': activeDatesCount
+      }
+    };
+    
+    await dynamoDB.send(new UpdateCommand(updateDaysParams));
+    
+    console.log(`User activity updated: userId=${userId}, yearMonth=${yearMonth}, date=${dateStr}`);
+    return { status: 'success', yearMonth, activeDatesCount };
+  } catch (error) {
+    console.error('Error updating user activity summary:', error);
+    // エラーが発生しても会話処理は継続させる
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * ユーザーの特定月のアクティビティサマリーを取得
+ * @param {string} userId - ユーザーID
+ * @param {string} yearMonth - 年月（例: "2025-12"）
+ * @returns {Object|null} サマリーデータ
+ */
+async function getUserActivitySummary(userId, yearMonth) {
+  try {
+    const params = {
+      TableName: tableUserActivitySummary,
+      Key: {
+        userId: userId,
+        yearMonth: yearMonth
+      }
+    };
+    
+    const data = await dynamoDB.send(new GetCommand(params));
+    return data.Item || null;
+  } catch (error) {
+    console.error('Error getting user activity summary:', error);
+    return null;
+  }
+}
+
+/**
+ * 特定月のアクティブユーザー数を取得（MAU計算用）
+ * @param {string} yearMonth - 年月（例: "2025-12"）
+ * @returns {Object} MAUデータ
+ */
+async function getMonthlyActiveUsers(yearMonth) {
+  try {
+    const params = {
+      TableName: tableUserActivitySummary,
+      FilterExpression: 'yearMonth = :yearMonth',
+      ExpressionAttributeValues: {
+        ':yearMonth': yearMonth
+      }
+    };
+    
+    const data = await dynamoDB.send(new ScanCommand(params));
+    const items = data.Items || [];
+    
+    // 集計
+    const totalUsers = items.length;
+    const totalMessages = items.reduce((sum, item) => sum + (item.messageCount || 0), 0);
+    const avgMessagesPerUser = totalUsers > 0 ? totalMessages / totalUsers : 0;
+    
+    return {
+      yearMonth,
+      activeUserCount: totalUsers,
+      totalMessages,
+      avgMessagesPerUser: Math.round(avgMessagesPerUser * 100) / 100,
+      users: items.map(item => ({
+        userId: item.userId,
+        messageCount: item.messageCount,
+        conversationDays: item.conversationDays,
+        firstMessageAt: item.firstMessageAt,
+        lastMessageAt: item.lastMessageAt
+      }))
+    };
+  } catch (error) {
+    console.error('Error getting monthly active users:', error);
+    return { yearMonth, activeUserCount: 0, totalMessages: 0, avgMessagesPerUser: 0, users: [] };
+  }
+}
+
+/**
+ * ユーザーのアクティビティ履歴を取得（過去N ヶ月）
+ * @param {string} userId - ユーザーID
+ * @param {number} months - 取得する月数（デフォルト: 12）
+ * @returns {Array} 月別サマリーの配列
+ */
+async function getUserActivityHistory(userId, months = 12) {
+  try {
+    const params = {
+      TableName: tableUserActivitySummary,
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId
+      },
+      ScanIndexForward: false, // 新しい順
+      Limit: months
+    };
+    
+    const data = await dynamoDB.send(new QueryCommand(params));
+    return data.Items || [];
+  } catch (error) {
+    console.error('Error getting user activity history:', error);
+    return [];
+  }
+}
+
 // 外部からの利用を可能にするために関数をエクスポート
 module.exports = {
   saveOrUpdateMessage,
@@ -871,5 +1034,10 @@ module.exports = {
   createBroadcastLog,
   updateBroadcastLog,
   getBroadcastLog,
-  getRecentBroadcastLogs
+  getRecentBroadcastLogs,
+  // User Activity Summary
+  updateUserActivitySummary,
+  getUserActivitySummary,
+  getMonthlyActiveUsers,
+  getUserActivityHistory
 };
