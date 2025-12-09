@@ -81,13 +81,19 @@ const {
   addBroadcastConversation,
   getCouponStatus,
   createBroadcastLog,
-  updateBroadcastLog
+  updateBroadcastLog,
+  getMonthlyActiveUsers,
+  getUserActivityHistory,
+  getRecentBroadcastLogs
 } = require('./dynamoDBManager');
 
-// Modified handler to support SQS messages
+// Modified handler to support SQS messages and analytics
 exports.handler = async (event, context) => {
   if (event.handler === 'broadcastHandler') {
     return await broadcastHandler(event, context);
+  } else if (event.handler === 'analyticsHandler') {
+    // Analytics handler for MAU and other metrics
+    return await analyticsHandler(event, context);
   } else if (event.Records && event.Records[0]?.eventSource === 'aws:sqs') {
     // Handle SQS events
     return await sqsHandler(event, context);
@@ -353,6 +359,136 @@ async function broadcastHandler(event) {
       body: JSON.stringify({ message: "Error in broadcast processing", error: error.message })
     };
   }
+}
+
+/**
+ * 分析用ハンドラー - MAUやブロードキャストログを取得
+ * 
+ * テストイベント例:
+ * 
+ * 1. 月別アクティブユーザー取得:
+ * {
+ *   "handler": "analyticsHandler",
+ *   "action": "getMonthlyActiveUsers",
+ *   "yearMonth": "2025-12"
+ * }
+ * 
+ * 2. ユーザーのアクティビティ履歴取得:
+ * {
+ *   "handler": "analyticsHandler",
+ *   "action": "getUserActivityHistory",
+ *   "userId": "Uxxxxxxxx",
+ *   "months": 6
+ * }
+ * 
+ * 3. 最近のブロードキャストログ取得:
+ * {
+ *   "handler": "analyticsHandler",
+ *   "action": "getRecentBroadcastLogs",
+ *   "limit": 10
+ * }
+ */
+async function analyticsHandler(event) {
+  try {
+    console.log('Analytics event:', JSON.stringify(event));
+    
+    const { action, yearMonth, userId, months, limit } = event;
+    
+    switch (action) {
+      case 'getMonthlyActiveUsers': {
+        // 月別アクティブユーザー取得
+        const targetYearMonth = yearMonth || getCurrentYearMonth();
+        const result = await getMonthlyActiveUsers(targetYearMonth);
+        
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getMonthlyActiveUsers',
+            ...result
+          }, null, 2)
+        };
+      }
+      
+      case 'getUserActivityHistory': {
+        // ユーザーのアクティビティ履歴取得
+        if (!userId) {
+          return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'userId is required' })
+          };
+        }
+        
+        const result = await getUserActivityHistory(userId, months || 12);
+        
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getUserActivityHistory',
+            userId,
+            months: months || 12,
+            history: result
+          }, null, 2)
+        };
+      }
+      
+      case 'getRecentBroadcastLogs': {
+        // 最近のブロードキャストログ取得
+        const result = await getRecentBroadcastLogs(limit || 50);
+        
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getRecentBroadcastLogs',
+            count: result.length,
+            logs: result
+          }, null, 2)
+        };
+      }
+      
+      default:
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            error: 'Invalid action',
+            availableActions: [
+              'getMonthlyActiveUsers',
+              'getUserActivityHistory',
+              'getRecentBroadcastLogs'
+            ],
+            examples: {
+              getMonthlyActiveUsers: {
+                handler: 'analyticsHandler',
+                action: 'getMonthlyActiveUsers',
+                yearMonth: '2025-12'
+              },
+              getUserActivityHistory: {
+                handler: 'analyticsHandler',
+                action: 'getUserActivityHistory',
+                userId: 'Uxxxxxxxx',
+                months: 6
+              },
+              getRecentBroadcastLogs: {
+                handler: 'analyticsHandler',
+                action: 'getRecentBroadcastLogs',
+                limit: 10
+              }
+            }
+          }, null, 2)
+        };
+    }
+  } catch (error) {
+    console.error('Analytics handler error:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+}
+
+// 現在の年月を取得するヘルパー関数
+function getCurrentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 async function sendBroadcastToSQS(userIds, messages, broadcastId, batchSize = 10, logTimestamp = null) {
