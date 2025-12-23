@@ -101,6 +101,69 @@ async function fetchClaudeResponse(conversationHistory, currentTime, messageType
   }
 }
 
+// ラッキーフード占い専用：カスタムシステムプロンプトを使用する関数
+async function fetchClaudeResponseWithCustomSystem(conversationHistory, currentTime, customSystemPrompt, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, season) {
+  try {
+    // 基本的な追加プロンプトを取得
+    let politenessToneSystemContent = await getSystemContent(`politenessTone${politenessTone}`) || '';
+    let attitudeToneSystemContent = await getSystemContent(`attitudeTone${attitudeTone}`) || '';
+
+    // 重要: politenessToneの設定を明示的にattitudeToneに引き継ぐ
+    if (politenessTone && attitudeTone) {
+      attitudeToneSystemContent += `\n\n現在の言葉遣い設定は「${politenessTone === 'P' ? '丁寧語' : 'タメ口'}」です。この言葉遣いを尊重して対応してください。`;
+    }
+
+    // 季節情報を自然に伝えるプロンプト（人間らしさを重視）
+    const seasonInfo = `
+【現在の季節についてのヒント】
+現在の日時：${currentTime}
+今の季節：${season}
+
+Gackyとして、今の季節「${season}」を意識した食材を提案してね。
+ただし、以下の点を心がけて：
+- ${season}らしい旬の食材を基本にしつつ、自由に選んでOK
+- 石川県・金沢の地元食材（加賀野菜、能登の食材など）も時々取り入れて
+- 時々、季節の変わり目を感じさせる食材や、Gackyらしいユニークな選択もアリ
+- 完璧じゃなくていい。人間らしく、時には「え、それ今の季節？」というツッコミどころがあっても大丈夫
+
+`;
+
+    // システムプロンプトを構築（カスタムプロンプト + 季節情報を優先）
+    let updatedSystemContent = [
+      seasonInfo,                       // 季節情報を最優先
+      customSystemPrompt,               // カスタムシステムプロンプト（luckyFoodFortune）
+      politenessToneSystemContent,      // 言葉遣い設定
+      attitudeToneSystemContent,        // 対応姿勢設定
+    ].filter(content => content).join('\n\n');
+
+    // Claude API送信前にメッセージをクリーニング
+    const cleanedMessages = conversationHistory.map(message => {
+      const { role, content } = message;
+      return { role, content };
+    });
+
+    // 環境変数からモデル名を取得、なければデフォルトを使用
+    const model = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+    console.log(`Using Claude model for lucky food fortune: ${model}`);
+    console.log(`Current season: ${season}`);
+
+    // レスポンスを取得
+    const response = await anthropic.messages.create({
+      max_tokens: 1024,
+      messages: cleanedMessages,
+      model: model,
+      system: updatedSystemContent
+    });
+
+    // Claudeからの応答文を取得
+    return { commentFromGacky: response.content[0].text };
+
+  } catch (error) {
+    console.error('Claude（ラッキーフード占い）エラー:', error);
+    return { commentFromGacky: 'LLM API error' };
+  }
+}
+
 async function isPrescriptionFlowRelated(conversationHistory) {
   try {
     // 基本的なSYSTEM_CONTENTをDynamoDBから取得
@@ -148,4 +211,4 @@ async function isPrescriptionFlowRelated(conversationHistory) {
   }
 }
 
-module.exports = { fetchClaudeResponse, isPrescriptionFlowRelated };
+module.exports = { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem, isPrescriptionFlowRelated };
