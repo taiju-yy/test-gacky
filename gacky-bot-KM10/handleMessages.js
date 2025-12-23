@@ -4,7 +4,7 @@ const client = new line.messagingApi.MessagingApiClient(
   { channelAccessToken: process.env.ACCESSTOKEN }
 );
 // Claudeからの応答を取得する関数をインポート
-const { fetchClaudeResponse } = require('./fetchClaudeResponse');
+const { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem } = require('./fetchClaudeResponse');
 const {
   saveOrUpdateMessage,
   getMessages,
@@ -610,7 +610,26 @@ function sanitizeMarkdown(text) {
   return text;
 }
 
-// ③ ラッキーフード占い（マークダウン対策版）
+// 季節を判定する関数
+function getSeason(month) {
+  if (month >= 3 && month <= 5) return '春';
+  if (month >= 6 && month <= 8) return '夏';
+  if (month >= 9 && month <= 11) return '秋';
+  return '冬';
+}
+
+// 季節ごとの旬の食材（例示用）
+function getSeasonalFoodsExample(season) {
+  const seasonalFoods = {
+    '春': ['菜の花', '新たまねぎ', 'アスパラガス', 'たけのこ', '春キャベツ', 'さわら', 'いちご'],
+    '夏': ['トマト', 'きゅうり', 'なす', 'ゴーヤ', 'すいか', 'とうもろこし', 'あじ'],
+    '秋': ['さつまいも', 'きのこ類', '栗', 'さんま', '柿', 'ぶどう', 'れんこん'],
+    '冬': ['大根', '白菜', 'ブリ', 'かに', 'みかん', 'ほうれん草', 'ねぎ']
+  };
+  return seasonalFoods[season] || seasonalFoods['冬'];
+}
+
+// ③ ラッキーフード占い（季節感対応版）
 async function showLuckyFoodFortuneAction(props) {
   const { userId, text } = props;
   
@@ -621,6 +640,10 @@ async function showLuckyFoodFortuneAction(props) {
     const month = currentJST.month() + 1;
     const day = currentJST.date();
     const hour = currentJST.hour();
+    
+    // 季節を判定
+    const season = getSeason(month);
+    const seasonalFoodsExample = getSeasonalFoodsExample(season);
     
     // ユーザー設定を取得
     const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone } = await getMessages(userId);
@@ -641,29 +664,33 @@ async function showLuckyFoodFortuneAction(props) {
 - 絵文字は適度に使用してください（1〜2個）`;
     }
     
-    // 占い生成用のプロンプト（マークダウン禁止を明記）
+    // 占い生成用のプロンプト（季節情報を自然に伝える）
     const luckyFoodPrompt = {
       role: 'user',
       content: `「ラッキーフード占い」をお願いします！
-現在：${currentTimeStr}
-今日（${month}月${day}日）の私にぴったりの食材を教えて！
 
-注意：マークダウン記法（**太字**など）は使わず、強調は「」で囲んでください。`
+今日は${month}月${day}日だよ。今の季節（${season}）にぴったりのラッキーフードを教えて！
+
+参考までに${season}の食材の例：${seasonalFoodsExample.join('、')} など
+（これ以外の${season}らしい食材でもOK！石川県の地元食材も大歓迎！）
+
+※マークダウン記法（**太字**など）は使わず、強調は「」で囲んでね`
     };
     
     // 会話履歴を作成
     const fortuneMessages = [luckyFoodPrompt];
     
-    // Claude APIでresponseを生成
-    const assistantMessageObj = await fetchClaudeResponse(
+    // Claude APIでresponseを生成（季節情報付きシステムプロンプトを使用）
+    const assistantMessageObj = await fetchClaudeResponseWithCustomSystem(
       fortuneMessages,
       currentTimeStr,
-      'text',
+      fortuneSystemPrompt,
       responseTone || 'N',
       relationshipTone || null,
       coachingStyle || 'B',
       politenessTone || 'N',
-      attitudeTone || null
+      attitudeTone || null,
+      season  // 季節情報を渡す
     );
     
     let fortuneMessage = assistantMessageObj.commentFromGacky;
@@ -671,12 +698,8 @@ async function showLuckyFoodFortuneAction(props) {
     // マークダウン記号を除去・置換
     fortuneMessage = sanitizeMarkdown(fortuneMessage);
     
-    // エラーハンドリング
+    // エラーハンドリング（既に定義済みの season 変数を使用）
     if (fortuneMessage === 'LLM API error') {
-      const season = month >= 3 && month <= 5 ? '春' :
-                    month >= 6 && month <= 8 ? '夏' :
-                    month >= 9 && month <= 11 ? '秋' : '冬';
-      
       const fallbackFoods = {
         '春': '「菜の花」！春のデトックスにぴったりだよ🌸',
         '夏': '「トマト」！リコピンで紫外線対策バッチリ🍅',
