@@ -49,7 +49,6 @@ async function fetchClaudeResponse(conversationHistory, currentTime, messageType
       responseToneSystemContent,      // 応答量設定
       politenessToneSystemContent,    // 言葉遣い設定（重要）
       attitudeToneSystemContent,      // 対応姿勢設定（重要）
-      `\n【再確認】ユーザーを「あんた」と呼ぶことは絶対に禁止です。必ず「〜さん」「〜ちゃん」などの敬称をつけてください。`,
       relationshipToneSystemContent,  // 恋愛観設定
       coachingStyleSystemContent,     // 健康指導設定
       imageSystemContent,            // 画像対応（使用時のみ）
