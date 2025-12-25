@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 249, 250, 251;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--background-end-rgb))
+  )
+  rgb(var(--background-start-rgb));
+}
+
+/* カスタムスタイル */
+.gacky-header {
+  @apply bg-white border-b shadow-sm;
+}
+
+.status-badge {
+  @apply px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.status-pending {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.status-confirmed {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.status-preparing {
+  @apply bg-purple-100 text-purple-800;
+}
+
+.status-ready {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-completed {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.status-cancelled {
+  @apply bg-red-100 text-red-800;
+}
+
+/* カードスタイル */
+.stat-card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6 transition-all hover:shadow-md;
+}
+
+/* メッセージスタイル */
+.message-customer {
+  @apply bg-green-100 text-green-900 rounded-lg rounded-br-none;
+}
+
+.message-store {
+  @apply bg-blue-100 text-blue-900 rounded-lg rounded-bl-none;
+}
+
+.message-system {
+  @apply bg-gray-100 text-gray-600 rounded-lg text-center text-sm;
+}

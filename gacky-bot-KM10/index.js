@@ -42,7 +42,9 @@ const {
   handleStoreCommandAction,
   handlePostbackAction,
   showLuckyFoodFortuneAction,
-  startChatWithGackyAction
+  startChatWithGackyAction,
+  showPrescriptionGuideAction,
+  keywordPrescription
 } = require('./handleMessages');
 
 // Error sticker
@@ -86,6 +88,14 @@ const {
   getUserActivityHistory,
   getRecentBroadcastLogs
 } = require('./dynamoDBManager');
+
+// 処方箋管理モジュール
+const {
+  handlePrescriptionImage,
+  checkActiveMessagingSession,
+  routeMessageToStore,
+  generateReceptionConfirmMessage,
+} = require('./prescriptionManager');
 
 // Modified handler to support SQS messages and analytics
 exports.handler = async (event, context) => {
@@ -166,8 +176,54 @@ async function defaultHandler(event, context) {
             const text = getTextContent(messageType, parsedBody);
             const actions = [];
 
+            // ========================================
+            // 処方箋関連: メッセージングセッションチェック
+            // 店舗とのやりとり中は、AI応答をスキップしてメッセージを店舗にルーティング
+            // ========================================
+            const messagingSession = await checkActiveMessagingSession(userId);
+            if (messagingSession.shouldRouteToStore && messagingSession.receptionId) {
+              console.log(`Routing message to store for reception: ${messagingSession.receptionId}`);
+              
+              // テキストメッセージの場合、店舗にルーティング
+              if (messageType === 'text') {
+                await routeMessageToStore(userId, messagingSession.receptionId, text, 'text');
+              }
+              
+              // AI応答をスキップ
+              const replyToken = parsedBody.events[0].replyToken;
+              await client.replyMessage({
+                replyToken,
+                messages: [{
+                  type: 'text',
+                  text: '💬 メッセージを店舗に送信しました。\n店舗からの返信をお待ちください。'
+                }]
+              });
+              
+              return {
+                statusCode: 200,
+                headers: { "x-line-status": "OK" },
+                body: '{"result":"routed_to_store"}',
+              };
+            }
+
+            // ========================================
+            // 処方箋画像受付チェック
+            // ========================================
+            if (messageType === 'image') {
+              // 処方箋として画像を受け付けるかどうかの判定
+              // TODO: より洗練された判定ロジック（例: リッチメニューから「処方箋を送る」を選択後の画像のみ受け付ける）
+              // 現時点では、すべての画像を処方箋として扱わず、通常のAI応答を行う
+              // 処方箋受付を有効にするには、フラグやセッション管理が必要
+            }
+
+            // ========================================
+            // 処方箋送付案内
+            // ========================================
+            if (messageType === 'text' && text === keywordPrescription) {
+              actions.push(showPrescriptionGuideAction);
+            }
             // 「トープ」キーワードの完全一致検出を最初に追加
-            if (messageType === 'text' && text === keywordCoupon) {
+            else if (messageType === 'text' && text === keywordCoupon) {
               // クーポン取得状況を確認
               const isGetCoupon = await getCouponStatus(userId);
 

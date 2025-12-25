@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Gacky Prescription Management System - DynamoDB Tables'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name
+
+Resources:
+  # 処方箋受付テーブル
+  PrescriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-prescriptions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: receptionId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: receptionId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: userId-timestamp-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-timestamp-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+
+  # 処方箋関連メッセージテーブル
+  PrescriptionMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-prescription-messages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: receptionId
+          AttributeType: S
+        - AttributeName: messageId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: receptionId
+          KeyType: HASH
+        - AttributeName: messageId
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+
+  # お客様メッセージングセッションテーブル
+  CustomerMessagingSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-customer-messaging-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+
+Outputs:
+  PrescriptionsTableName:
+    Description: Name of the Prescriptions table
+    Value: !Ref PrescriptionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PrescriptionsTable'
+
+  PrescriptionsTableArn:
+    Description: ARN of the Prescriptions table
+    Value: !GetAtt PrescriptionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PrescriptionsTableArn'
+
+  PrescriptionMessagesTableName:
+    Description: Name of the Prescription Messages table
+    Value: !Ref PrescriptionMessagesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PrescriptionMessagesTable'
+
+  CustomerMessagingSessionsTableName:
+    Description: Name of the Customer Messaging Sessions table
+    Value: !Ref CustomerMessagingSessionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CustomerMessagingSessionsTable'
