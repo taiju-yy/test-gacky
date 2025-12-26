@@ -32,6 +32,7 @@ const {
   AllSettingsFlexMessageBuilder
 } = require('./utils');
 const { handleStoreCommand } = require('./selectStoreManager');
+const { startPrescriptionMode } = require('./prescriptionManager');
 
 const availableMessageTypes = [
   'text', //テキスト
@@ -952,6 +953,77 @@ ${monthlyContext.specific ? `- 特記事項：${monthlyContext.specific}` : ''}
   }
 }
 
+// 処方箋画像受付キーワード
+const keywordPrescription = '処方箋を送る';
+
+// 処方箋送付案内アクション
+// リッチメニューから「処方箋を送る」を押したときに呼び出される
+// 処方箋受付モードを開始し、次に送られる画像を処方箋として受け付ける
+async function showPrescriptionGuideAction(props) {
+  const { userId } = props;
+
+  // 処方箋受付モードを開始（10分間有効）
+  await startPrescriptionMode(userId);
+  console.log(`Prescription mode started for user ${userId}`);
+
+  const replyMessages = [{
+    type: 'flex',
+    altText: '処方箋の送り方',
+    contents: {
+      type: 'bubble',
+      hero: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '📋',
+            size: '3xl',
+            align: 'center',
+          },
+        ],
+        paddingAll: '20px',
+        backgroundColor: '#E3F2FD',
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '処方箋を送る',
+            weight: 'bold',
+            size: 'lg',
+            align: 'center',
+          },
+          {
+            type: 'separator',
+            margin: 'lg',
+          },
+          {
+            type: 'text',
+            text: '処方箋の写真を撮って、このチャットに送ってね！\n\n📸 処方箋全体が写るように撮影してね\n\n受け取ったら、お近くのあおぞら薬局でお薬を準備するよ！',
+            size: 'sm',
+            wrap: true,
+            margin: 'lg',
+          },
+          {
+            type: 'text',
+            text: '※ 10分以内に画像を送信してください',
+            size: 'xs',
+            color: '#888888',
+            align: 'center',
+            margin: 'lg',
+          },
+        ],
+        paddingAll: '20px',
+      },
+    },
+  }];
+
+  await commonAction(props, replyMessages);
+}
+
 module.exports = {
   defaultAction,
   couponAction,
@@ -972,5 +1044,7 @@ module.exports = {
   handleStoreCommandAction,
   handlePostbackAction,
   showLuckyFoodFortuneAction,
-  startChatWithGackyAction
+  startChatWithGackyAction,
+  showPrescriptionGuideAction,
+  keywordPrescription
 }

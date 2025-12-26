@@ -1,0 +1,128 @@
+/**
+ * 処方箋管理システムの型定義
+ */
+
+// 受付ステータス
+export type ReceptionStatus = 
+  | 'pending'      // 受付待ち（管理者確認前）
+  | 'confirmed'    // 確認済み（店舗に割振り済み）
+  | 'preparing'    // 調剤中
+  | 'ready'        // 準備完了
+  | 'completed'    // 受取完了
+  | 'cancelled';   // キャンセル
+
+// メッセージングセッションのステータス
+export type MessagingSessionStatus = 
+  | 'inactive'     // 店舗とのやりとりなし（AI応答有効）
+  | 'active'       // 店舗とやりとり中（AI応答スキップ）
+  | 'closed';      // やりとり終了（AI応答有効に戻る）
+
+// 店舗情報
+export interface Store {
+  storeId: string;
+  storeName: string;
+  region: string;
+  address: string;
+  phone: string;
+  lineUrl: string;
+  mapUrl: string;
+  businessHours: string;
+}
+
+// 処方箋受付情報
+export interface PrescriptionReception {
+  receptionId: string;           // 受付ID（PK）
+  timestamp: string;             // 受付日時（SK）
+  userId: string;                // LINE ユーザーID
+  userDisplayName?: string;      // ユーザー表示名
+  userProfileImage?: string;     // ユーザープロフィール画像
+  
+  // 処方箋情報
+  prescriptionImageUrl: string;  // 処方箋画像URL（S3）
+  prescriptionImageKey: string;  // S3キー
+  ocrResult?: string;            // OCR結果（参考情報）
+  
+  // 店舗情報
+  selectedStoreId?: string;      // 選択された店舗ID
+  selectedStoreName?: string;    // 選択された店舗名
+  preferredStoreId?: string;     // お客様希望店舗ID
+  
+  // ステータス
+  status: ReceptionStatus;
+  messagingSessionStatus: MessagingSessionStatus;
+  
+  // メタ情報
+  customerNote?: string;         // お客様からのメモ
+  staffNote?: string;            // 管理者/店舗からのメモ
+  
+  // 日時情報
+  confirmedAt?: string;          // 確認日時
+  assignedAt?: string;           // 店舗割振り日時
+  readyAt?: string;              // 準備完了日時
+  completedAt?: string;          // 受取完了日時
+  
+  // TTL（1年後に自動削除）
+  ttl: number;
+}
+
+// 処方箋関連メッセージ（店舗⇔お客様）
+export interface PrescriptionMessage {
+  receptionId: string;           // 受付ID（PK）
+  messageId: string;             // メッセージID（SK）
+  timestamp: string;             // 送信日時
+  
+  // 送信者情報
+  senderType: 'customer' | 'store' | 'system';
+  senderId: string;              // ユーザーID or 店舗ID or 'system'
+  senderName: string;            // 表示名
+  
+  // メッセージ内容
+  messageType: 'text' | 'image';
+  content: string;               // テキスト or 画像URL
+  
+  // LINE配信情報
+  lineDelivered: boolean;        // LINE送信済みフラグ
+  lineDeliveredAt?: string;      // LINE送信日時
+  
+  // 既読情報
+  readByCustomer: boolean;
+  readByStore: boolean;
+  
+  // TTL
+  ttl: number;
+}
+
+// お客様のアクティブセッション情報（DynamoDBに保存）
+export interface CustomerMessagingSession {
+  userId: string;                         // LINE ユーザーID（PK）
+  activeReceptionId: string | null;       // アクティブな受付ID
+  messagingSessionStatus: MessagingSessionStatus;
+  lastStoreMessageAt?: string;            // 最後の店舗メッセージ日時
+  sessionStartedAt?: string;              // セッション開始日時
+  sessionTimeoutMinutes: number;          // タイムアウト時間（分）
+  updatedAt: string;
+}
+
+// API レスポンス
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+// ダッシュボード統計
+export interface DashboardStats {
+  pendingCount: number;       // 受付待ち
+  preparingCount: number;     // 調剤中
+  readyCount: number;         // 準備完了
+  todayTotal: number;         // 本日合計
+}
+
+// 通知タイプ
+export type NotificationType = 
+  | 'new_reception'           // 新規受付
+  | 'store_assigned'          // 店舗割振り
+  | 'preparation_started'     // 調剤開始
+  | 'ready_for_pickup'        // 準備完了
+  | 'message_from_store';     // 店舗からのメッセージ

@@ -1,4 +1,6 @@
 .DS_Store
+node_modules/
+.next/
 export-unfollow-record/function.zip
 simple-queue-service/lambda_deployment.zip
 simple-queue-service/env39/lib/python3.9/site-packages/pkg_resources/tests/data/my-test-package-zip/my-test-package.zip

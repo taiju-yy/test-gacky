@@ -42,7 +42,9 @@ const {
   handleStoreCommandAction,
   handlePostbackAction,
   showLuckyFoodFortuneAction,
-  startChatWithGackyAction
+  startChatWithGackyAction,
+  showPrescriptionGuideAction,
+  keywordPrescription
 } = require('./handleMessages');
 
 // Error sticker
@@ -86,6 +88,18 @@ const {
   getUserActivityHistory,
   getRecentBroadcastLogs
 } = require('./dynamoDBManager');
+
+// 処方箋管理モジュール
+const {
+  handlePrescriptionImage,
+  checkActiveMessagingSession,
+  routeMessageToStore,
+  generateReceptionConfirmMessage,
+  startPrescriptionMode,
+  checkPrescriptionMode,
+  clearPrescriptionMode,
+  startWaitingSession,
+} = require('./prescriptionManager');
 
 // Modified handler to support SQS messages and analytics
 exports.handler = async (event, context) => {
@@ -166,8 +180,118 @@ async function defaultHandler(event, context) {
             const text = getTextContent(messageType, parsedBody);
             const actions = [];
 
+            // ========================================
+            // 処方箋関連: メッセージングセッションチェック
+            // 店舗とのやりとり中は、AI応答をスキップしてメッセージを店舗にルーティング
+            // ========================================
+            const messagingSession = await checkActiveMessagingSession(userId);
+            if (messagingSession.shouldRouteToStore && messagingSession.receptionId) {
+              console.log(`Routing message to store for reception: ${messagingSession.receptionId}`);
+              
+              // テキストメッセージの場合、店舗にルーティング
+              if (messageType === 'text') {
+                await routeMessageToStore(userId, messagingSession.receptionId, text, 'text');
+              }
+              
+              // AI応答をスキップ
+              const replyToken = parsedBody.events[0].replyToken;
+              await client.replyMessage({
+                replyToken,
+                messages: [{
+                  type: 'text',
+                  text: '💬 メッセージを店舗に送信しました。\n店舗からの返信をお待ちください。'
+                }]
+              });
+              
+              return {
+                statusCode: 200,
+                headers: { "x-line-status": "OK" },
+                body: '{"result":"routed_to_store"}',
+              };
+            }
+
+            // ========================================
+            // 処方箋画像受付チェック
+            // リッチメニューから「処方箋を送る」押下後の画像のみ受け付ける
+            // ========================================
+            if (messageType === 'image') {
+              const prescriptionMode = await checkPrescriptionMode(userId);
+              if (prescriptionMode.isActive) {
+                console.log(`Prescription mode active for user ${userId}, processing image as prescription`);
+                
+                // 処方箋モードを解除
+                await clearPrescriptionMode(userId);
+                
+                // 画像を取得して処方箋として処理
+                const messageId = parsedBody.events[0].message.id;
+                try {
+                  // LINEから画像コンテンツを取得
+                  const imageContent = await client.getMessageContent(messageId);
+                  const chunks = [];
+                  for await (const chunk of imageContent) {
+                    chunks.push(chunk);
+                  }
+                  const imageBuffer = Buffer.concat(chunks);
+                  
+                  // ユーザープロフィールを取得
+                  let userProfile = null;
+                  try {
+                    userProfile = await client.getProfile(userId);
+                  } catch (profileError) {
+                    console.warn('Could not get user profile:', profileError.message);
+                  }
+                  
+                  // 処方箋として保存
+                  const result = await handlePrescriptionImage(userId, userProfile, imageBuffer, messageId);
+                  
+                  if (result.success) {
+                    // 「待機中」セッションを開始（店舗からの連絡待ち）
+                    await startWaitingSession(userId, result.receptionId);
+                    
+                    // 受付確認メッセージを送信
+                    const replyToken = parsedBody.events[0].replyToken;
+                    const confirmMessage = generateReceptionConfirmMessage(result.receptionId);
+                    await client.replyMessage({
+                      replyToken,
+                      messages: [confirmMessage]
+                    });
+                    
+                    return {
+                      statusCode: 200,
+                      headers: { "x-line-status": "OK" },
+                      body: '{"result":"prescription_received"}',
+                    };
+                  } else {
+                    throw new Error(result.error || 'Failed to process prescription');
+                  }
+                } catch (imageError) {
+                  console.error('Error processing prescription image:', imageError);
+                  const replyToken = parsedBody.events[0].replyToken;
+                  await client.replyMessage({
+                    replyToken,
+                    messages: [{
+                      type: 'text',
+                      text: 'ごめんなさい、処方箋の受付中にエラーが発生しました。\nお手数ですが、もう一度「処方箋を送る」からやり直してください。'
+                    }]
+                  });
+                  return {
+                    statusCode: 200,
+                    headers: { "x-line-status": "OK" },
+                    body: '{"result":"prescription_error"}',
+                  };
+                }
+              }
+              // 処方箋モードでない場合は通常のAI応答へ
+            }
+
+            // ========================================
+            // 処方箋送付案内
+            // ========================================
+            if (messageType === 'text' && text === keywordPrescription) {
+              actions.push(showPrescriptionGuideAction);
+            }
             // 「トープ」キーワードの完全一致検出を最初に追加
-            if (messageType === 'text' && text === keywordCoupon) {
+            else if (messageType === 'text' && text === keywordCoupon) {
               // クーポン取得状況を確認
               const isGetCoupon = await getCouponStatus(userId);
 
