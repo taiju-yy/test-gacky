@@ -95,6 +95,10 @@ const {
   checkActiveMessagingSession,
   routeMessageToStore,
   generateReceptionConfirmMessage,
+  startPrescriptionMode,
+  checkPrescriptionMode,
+  clearPrescriptionMode,
+  startWaitingSession,
 } = require('./prescriptionManager');
 
 // Modified handler to support SQS messages and analytics
@@ -208,12 +212,76 @@ async function defaultHandler(event, context) {
 
             // ========================================
             // 処方箋画像受付チェック
+            // リッチメニューから「処方箋を送る」押下後の画像のみ受け付ける
             // ========================================
             if (messageType === 'image') {
-              // 処方箋として画像を受け付けるかどうかの判定
-              // TODO: より洗練された判定ロジック（例: リッチメニューから「処方箋を送る」を選択後の画像のみ受け付ける）
-              // 現時点では、すべての画像を処方箋として扱わず、通常のAI応答を行う
-              // 処方箋受付を有効にするには、フラグやセッション管理が必要
+              const prescriptionMode = await checkPrescriptionMode(userId);
+              if (prescriptionMode.isActive) {
+                console.log(`Prescription mode active for user ${userId}, processing image as prescription`);
+                
+                // 処方箋モードを解除
+                await clearPrescriptionMode(userId);
+                
+                // 画像を取得して処方箋として処理
+                const messageId = parsedBody.events[0].message.id;
+                try {
+                  // LINEから画像コンテンツを取得
+                  const imageContent = await client.getMessageContent(messageId);
+                  const chunks = [];
+                  for await (const chunk of imageContent) {
+                    chunks.push(chunk);
+                  }
+                  const imageBuffer = Buffer.concat(chunks);
+                  
+                  // ユーザープロフィールを取得
+                  let userProfile = null;
+                  try {
+                    userProfile = await client.getProfile(userId);
+                  } catch (profileError) {
+                    console.warn('Could not get user profile:', profileError.message);
+                  }
+                  
+                  // 処方箋として保存
+                  const result = await handlePrescriptionImage(userId, userProfile, imageBuffer, messageId);
+                  
+                  if (result.success) {
+                    // 「待機中」セッションを開始（店舗からの連絡待ち）
+                    await startWaitingSession(userId, result.receptionId);
+                    
+                    // 受付確認メッセージを送信
+                    const replyToken = parsedBody.events[0].replyToken;
+                    const confirmMessage = generateReceptionConfirmMessage(result.receptionId);
+                    await client.replyMessage({
+                      replyToken,
+                      messages: [confirmMessage]
+                    });
+                    
+                    return {
+                      statusCode: 200,
+                      headers: { "x-line-status": "OK" },
+                      body: '{"result":"prescription_received"}',
+                    };
+                  } else {
+                    throw new Error(result.error || 'Failed to process prescription');
+                  }
+                } catch (imageError) {
+                  console.error('Error processing prescription image:', imageError);
+                  const replyToken = parsedBody.events[0].replyToken;
+                  await client.replyMessage({
+                    replyToken,
+                    messages: [{
+                      type: 'text',
+                      text: 'ごめんなさい、処方箋の受付中にエラーが発生しました。\nお手数ですが、もう一度「処方箋を送る」からやり直してください。'
+                    }]
+                  });
+                  return {
+                    statusCode: 200,
+                    headers: { "x-line-status": "OK" },
+                    body: '{"result":"prescription_error"}',
+                  };
+                }
+              }
+              // 処方箋モードでない場合は通常のAI応答へ
             }
 
             // ========================================

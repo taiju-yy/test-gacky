@@ -34,6 +34,9 @@ const PRESCRIPTION_BUCKET = process.env.PRESCRIPTION_BUCKET || 'gacky-prescripti
 // セッションタイムアウト（分）
 const SESSION_TIMEOUT_MINUTES = 30;
 
+// 処方箋受付モードタイムアウト（分）- リッチメニューから「処方箋を送る」押下後
+const PRESCRIPTION_MODE_TIMEOUT_MINUTES = 10;
+
 // TTL計算（1年後）
 const getTTL = () => Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
 
@@ -113,6 +116,11 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
  * これがtrueの場合:
  * - AI自動応答をスキップする
  * - メッセージを店舗にルーティングする
+ * 
+ * セッションステータス:
+ * - 'active': 店舗とお客様がやりとり中（双方のメッセージでAIスキップ）
+ * - 'waiting': 処方箋受付後、店舗からの返信待ち（お客様メッセージはAIスキップしない）
+ * - 'closed': セッション終了（通常のAI応答に戻る）
  */
 async function checkActiveMessagingSession(userId) {
   try {
@@ -126,25 +134,31 @@ async function checkActiveMessagingSession(userId) {
         isActive: false,
         receptionId: null,
         shouldRouteToStore: false,
+        sessionStatus: null,
       };
     }
 
     const sessionData = session.Item;
+    const now = Date.now();
 
     // セッションがアクティブかつタイムアウトしていないか確認
-    if (sessionData.messagingSessionStatus === 'active' && sessionData.lastStoreMessageAt) {
-      const lastMessageTime = new Date(sessionData.lastStoreMessageAt).getTime();
+    if (sessionData.messagingSessionStatus === 'active') {
+      // 最後のアクティビティ（店舗またはお客様からのメッセージ）を確認
+      const lastStoreTime = sessionData.lastStoreMessageAt ? new Date(sessionData.lastStoreMessageAt).getTime() : 0;
+      const lastCustomerTime = sessionData.lastCustomerMessageAt ? new Date(sessionData.lastCustomerMessageAt).getTime() : 0;
+      const lastActivityTime = Math.max(lastStoreTime, lastCustomerTime);
+      
       const timeoutMs = (sessionData.sessionTimeoutMinutes || SESSION_TIMEOUT_MINUTES) * 60 * 1000;
-      const now = Date.now();
 
-      if (now - lastMessageTime < timeoutMs) {
+      if (lastActivityTime > 0 && (now - lastActivityTime < timeoutMs)) {
         console.log(`Active messaging session found for user ${userId}, reception: ${sessionData.activeReceptionId}`);
         return {
           isActive: true,
           receptionId: sessionData.activeReceptionId,
           shouldRouteToStore: true,
+          sessionStatus: 'active',
         };
-      } else {
+      } else if (lastActivityTime > 0) {
         // タイムアウト - セッションを閉じる
         console.log(`Session timeout for user ${userId}, closing session`);
         await closeMessagingSession(userId);
@@ -153,8 +167,9 @@ async function checkActiveMessagingSession(userId) {
 
     return {
       isActive: false,
-      receptionId: null,
+      receptionId: sessionData.activeReceptionId || null,
       shouldRouteToStore: false,
+      sessionStatus: sessionData.messagingSessionStatus || null,
     };
   } catch (error) {
     console.error('Error checking messaging session:', error);
@@ -162,6 +177,7 @@ async function checkActiveMessagingSession(userId) {
       isActive: false,
       receptionId: null,
       shouldRouteToStore: false,
+      sessionStatus: null,
     };
   }
 }
@@ -173,6 +189,12 @@ async function activateMessagingSession(userId, receptionId) {
   try {
     const timestamp = new Date().toISOString();
 
+    // 既存のセッションを取得
+    const existingSession = await dynamoDB.send(new GetCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Key: { userId },
+    }));
+
     // セッションを作成/更新
     await dynamoDB.send(new PutCommand({
       TableName: TABLE_CUSTOMER_SESSIONS,
@@ -181,7 +203,8 @@ async function activateMessagingSession(userId, receptionId) {
         activeReceptionId: receptionId,
         messagingSessionStatus: 'active',
         lastStoreMessageAt: timestamp,
-        sessionStartedAt: timestamp,
+        lastCustomerMessageAt: existingSession?.Item?.lastCustomerMessageAt || null,
+        sessionStartedAt: existingSession?.Item?.sessionStartedAt || timestamp,
         sessionTimeoutMinutes: SESSION_TIMEOUT_MINUTES,
         updatedAt: timestamp,
       },
@@ -212,9 +235,15 @@ async function activateMessagingSession(userId, receptionId) {
 }
 
 /**
- * メッセージングセッションを閉じる
+ * メッセージングセッションを閉じる（準備完了/受け渡し完了/キャンセル時）
+ * 
+ * 呼び出し元:
+ * - 店舗スタッフが「準備完了」ボタンを押した時
+ * - 店舗スタッフが「受け渡し完了」ボタンを押した時
+ * - 店舗スタッフが「キャンセル」ボタンを押した時
+ * - セッションタイムアウト時
  */
-async function closeMessagingSession(userId) {
+async function closeMessagingSession(userId, reason = 'manual') {
   try {
     const session = await dynamoDB.send(new GetCommand({
       TableName: TABLE_CUSTOMER_SESSIONS,
@@ -231,9 +260,11 @@ async function closeMessagingSession(userId) {
             receptionId: session.Item.activeReceptionId,
             timestamp: reception.timestamp,
           },
-          UpdateExpression: 'SET messagingSessionStatus = :status',
+          UpdateExpression: 'SET messagingSessionStatus = :status, sessionClosedAt = :closedAt, sessionCloseReason = :reason',
           ExpressionAttributeValues: {
             ':status': 'closed',
+            ':closedAt': new Date().toISOString(),
+            ':reason': reason,
           },
         }));
       }
@@ -247,13 +278,16 @@ async function closeMessagingSession(userId) {
         activeReceptionId: null,
         messagingSessionStatus: 'closed',
         lastStoreMessageAt: null,
+        lastCustomerMessageAt: null,
         sessionStartedAt: null,
+        sessionClosedAt: new Date().toISOString(),
+        sessionCloseReason: reason,
         sessionTimeoutMinutes: SESSION_TIMEOUT_MINUTES,
         updatedAt: new Date().toISOString(),
       },
     }));
 
-    console.log(`Messaging session closed for user ${userId}`);
+    console.log(`Messaging session closed for user ${userId}, reason: ${reason}`);
     return { success: true };
   } catch (error) {
     console.error('Error closing messaging session:', error);
@@ -432,7 +466,7 @@ async function sendMessageToCustomer(receptionId, storeId, storeName, messageCon
 }
 
 /**
- * 準備完了通知をお客様に送信
+ * 準備完了通知をお客様に送信し、セッションを閉じる
  */
 async function sendReadyNotification(receptionId, lineClient) {
   try {
@@ -473,7 +507,27 @@ async function sendReadyNotification(receptionId, lineClient) {
       );
     }
 
-    console.log(`Ready notification sent to user: ${userId}`);
+    // セッションを閉じる（準備完了）
+    await closeMessagingSession(userId, 'ready');
+
+    // 処方箋のステータスも更新
+    await dynamoDB.send(new UpdateCommand({
+      TableName: TABLE_PRESCRIPTIONS,
+      Key: {
+        receptionId,
+        timestamp: reception.timestamp,
+      },
+      UpdateExpression: 'SET #status = :status, readyAt = :readyAt',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':status': 'ready',
+        ':readyAt': new Date().toISOString(),
+      },
+    }));
+
+    console.log(`Ready notification sent to user: ${userId}, session closed`);
 
     return { success: true };
   } catch (error) {
@@ -558,6 +612,119 @@ function generateReceptionConfirmMessage(receptionId) {
   };
 }
 
+/**
+ * 処方箋受付モードを開始する（リッチメニューから「処方箋を送る」を押したとき）
+ * 
+ * このモードが有効な間、次に送られてくる画像を処方箋として受け付ける
+ */
+async function startPrescriptionMode(userId) {
+  try {
+    const timestamp = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + PRESCRIPTION_MODE_TIMEOUT_MINUTES * 60 * 1000).toISOString();
+
+    await dynamoDB.send(new PutCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Item: {
+        userId,
+        prescriptionModeActive: true,
+        prescriptionModeStartedAt: timestamp,
+        prescriptionModeExpiresAt: expiresAt,
+        activeReceptionId: null,
+        messagingSessionStatus: null,
+        updatedAt: timestamp,
+      },
+    }));
+
+    console.log(`Prescription mode started for user ${userId}, expires at ${expiresAt}`);
+    return { success: true, expiresAt };
+  } catch (error) {
+    console.error('Error starting prescription mode:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 処方箋受付モードかどうか確認
+ */
+async function checkPrescriptionMode(userId) {
+  try {
+    const session = await dynamoDB.send(new GetCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Key: { userId },
+    }));
+
+    if (!session.Item || !session.Item.prescriptionModeActive) {
+      return { isActive: false };
+    }
+
+    const expiresAt = new Date(session.Item.prescriptionModeExpiresAt).getTime();
+    const now = Date.now();
+
+    if (now > expiresAt) {
+      // タイムアウト - モードを解除
+      await clearPrescriptionMode(userId);
+      return { isActive: false, reason: 'expired' };
+    }
+
+    return { isActive: true };
+  } catch (error) {
+    console.error('Error checking prescription mode:', error);
+    return { isActive: false };
+  }
+}
+
+/**
+ * 処方箋受付モードを解除
+ */
+async function clearPrescriptionMode(userId) {
+  try {
+    await dynamoDB.send(new UpdateCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Key: { userId },
+      UpdateExpression: 'SET prescriptionModeActive = :active, updatedAt = :updatedAt',
+      ExpressionAttributeValues: {
+        ':active': false,
+        ':updatedAt': new Date().toISOString(),
+      },
+    }));
+
+    console.log(`Prescription mode cleared for user ${userId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing prescription mode:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 処方箋受付後、「待機中」セッションを開始
+ * （店舗からの連絡を待っている状態。この状態ではお客様のメッセージはAIスキップしない）
+ */
+async function startWaitingSession(userId, receptionId) {
+  try {
+    const timestamp = new Date().toISOString();
+
+    await dynamoDB.send(new PutCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Item: {
+        userId,
+        activeReceptionId: receptionId,
+        messagingSessionStatus: 'waiting',
+        prescriptionModeActive: false,
+        sessionStartedAt: timestamp,
+        sessionTimeoutMinutes: SESSION_TIMEOUT_MINUTES,
+        updatedAt: timestamp,
+      },
+    }));
+
+    console.log(`Waiting session started for user ${userId}, reception ${receptionId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error starting waiting session:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   handlePrescriptionImage,
   checkActiveMessagingSession,
@@ -568,7 +735,12 @@ module.exports = {
   sendReadyNotification,
   generateReceptionConfirmMessage,
   getReceptionById,
+  startPrescriptionMode,
+  checkPrescriptionMode,
+  clearPrescriptionMode,
+  startWaitingSession,
   TABLE_PRESCRIPTIONS,
   TABLE_PRESCRIPTION_MESSAGES,
   TABLE_CUSTOMER_SESSIONS,
+  SESSION_TIMEOUT_MINUTES,
 };
