@@ -502,7 +502,7 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
       if (index === 0 && (newMessages.length === 0 || newMessages[newMessages.length - 1].role === 'assistant')) {
         newMessages.push({ 
           role: 'user', 
-          content: 'ブロードキャストメッセージを受信しました。',
+          content: 'こんにちは',
           timestamp: msgTimestamp,  // メッセージごとにタイムスタンプを追加
           metadata: {
             broadcastId: messageId,
@@ -867,7 +867,7 @@ async function updateUserActivitySummary(userId, messageTimestamp = null) {
     const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const timestampStr = now.toISOString();
-    
+
     // DynamoDB UpdateExpressionを使用してアトミックに更新
     const params = {
       TableName: tableUserActivitySummary,
@@ -890,13 +890,13 @@ async function updateUserActivitySummary(userId, messageTimestamp = null) {
       },
       ReturnValues: 'ALL_NEW'
     };
-    
+
     const result = await dynamoDB.send(new UpdateCommand(params));
-    
+
     // activeDatesのサイズからconversationDaysを計算して更新
     const activeDatesCount = result.Attributes.activeDates ? 
       (result.Attributes.activeDates.size || result.Attributes.activeDates.length || 0) : 0;
-    
+
     // conversationDaysを別途更新
     const updateDaysParams = {
       TableName: tableUserActivitySummary,
@@ -909,9 +909,9 @@ async function updateUserActivitySummary(userId, messageTimestamp = null) {
         ':days': activeDatesCount
       }
     };
-    
+
     await dynamoDB.send(new UpdateCommand(updateDaysParams));
-    
+
     console.log(`User activity updated: userId=${userId}, yearMonth=${yearMonth}, date=${dateStr}`);
     return { status: 'success', yearMonth, activeDatesCount };
   } catch (error) {
@@ -936,7 +936,7 @@ async function getUserActivitySummary(userId, yearMonth) {
         yearMonth: yearMonth
       }
     };
-    
+
     const data = await dynamoDB.send(new GetCommand(params));
     return data.Item || null;
   } catch (error) {
@@ -959,15 +959,15 @@ async function getMonthlyActiveUsers(yearMonth) {
         ':yearMonth': yearMonth
       }
     };
-    
+
     const data = await dynamoDB.send(new ScanCommand(params));
     const items = data.Items || [];
-    
+
     // 集計
     const totalUsers = items.length;
     const totalMessages = items.reduce((sum, item) => sum + (item.messageCount || 0), 0);
     const avgMessagesPerUser = totalUsers > 0 ? totalMessages / totalUsers : 0;
-    
+
     return {
       yearMonth,
       activeUserCount: totalUsers,
@@ -1004,7 +1004,7 @@ async function getUserActivityHistory(userId, months = 12) {
       ScanIndexForward: false, // 新しい順
       Limit: months
     };
-    
+
     const data = await dynamoDB.send(new QueryCommand(params));
     return data.Items || [];
   } catch (error) {
