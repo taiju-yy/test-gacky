@@ -21,16 +21,19 @@ const checkSessionTimeout = (reception: PrescriptionReception): PrescriptionRece
   }
 
   // 最後のアクティビティ時刻を取得
-  // lastStoreMessageAt または lastCustomerMessageAt の新しい方
+  // lastStoreMessageAt, lastCustomerMessageAt, sessionReactivatedAt の最新を使用
   const lastStoreTime = reception.lastStoreMessageAt 
     ? new Date(reception.lastStoreMessageAt).getTime() 
     : 0;
   const lastCustomerTime = reception.lastCustomerMessageAt 
     ? new Date(reception.lastCustomerMessageAt).getTime() 
     : 0;
+  const sessionReactivatedTime = reception.sessionReactivatedAt
+    ? new Date(reception.sessionReactivatedAt).getTime()
+    : 0;
   
   // どちらもない場合は、受付時刻を使用
-  let lastActivityTime = Math.max(lastStoreTime, lastCustomerTime);
+  let lastActivityTime = Math.max(lastStoreTime, lastCustomerTime, sessionReactivatedTime);
   if (lastActivityTime === 0 && reception.timestamp) {
     lastActivityTime = new Date(reception.timestamp).getTime();
   }
@@ -394,16 +397,36 @@ export default function Dashboard() {
     }
   };
 
+  // メッセージを既読にするAPI呼び出し
+  const markMessagesAsRead = useCallback(async (receptionId: string, messageList: PrescriptionMessage[]) => {
+    const unreadMessageIds = messageList
+      .filter((msg) => msg.senderType === 'customer' && !msg.readByStore)
+      .map((msg) => msg.messageId);
+    
+    if (unreadMessageIds.length > 0) {
+      try {
+        await fetch('/api/messages', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            receptionId,
+            messageIds: unreadMessageIds,
+          }),
+        });
+        console.log(`Marked ${unreadMessageIds.length} messages as read for ${receptionId}`);
+      } catch (error) {
+        console.error('Error marking messages as read:', error);
+      }
+    }
+  }, []);
+
   // 受付選択時に未読をクリアしてメッセージを取得
-  const handleSelectReception = (reception: PrescriptionReception) => {
+  const handleSelectReception = async (reception: PrescriptionReception) => {
     // タイムアウトチェックを適用してから選択
     const checkedReception = checkSessionTimeout(reception);
     setSelectedReception(checkedReception);
     
-    // メッセージを取得
-    fetchMessages(reception.receptionId);
-    
-    // 未読メッセージをクリア
+    // 未読数を即座にUIからクリア（楽観的更新）
     if (reception.unreadMessageCount && reception.unreadMessageCount > 0) {
       setReceptions((prev) =>
         prev.map((r) =>
@@ -412,31 +435,36 @@ export default function Dashboard() {
             : r
         )
       );
+    }
+    
+    // メッセージを取得してから既読更新を実行
+    try {
+      const response = await fetch(`/api/messages?receptionId=${reception.receptionId}`);
+      const data = await response.json();
       
-      // メッセージの既読状態も更新
-      setMessages((prev) => ({
-        ...prev,
-        [reception.receptionId]: (prev[reception.receptionId] || []).map((msg) => ({
-          ...msg,
-          readByStore: true,
-        })),
-      }));
-
-      // API呼び出し（既読更新）
-      const unreadMessageIds = (messages[reception.receptionId] || [])
-        .filter((msg) => !msg.readByStore)
-        .map((msg) => msg.messageId);
-      
-      if (unreadMessageIds.length > 0) {
-        fetch('/api/messages', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            receptionId: reception.receptionId,
-            messageIds: unreadMessageIds,
-          }),
-        }).catch(console.error);
+      if (data.success) {
+        const messageList = data.data as PrescriptionMessage[];
+        
+        // メッセージをステートに保存
+        setMessages((prev) => ({
+          ...prev,
+          [reception.receptionId]: messageList,
+        }));
+        
+        // メッセージの既読状態をUIで更新
+        setMessages((prev) => ({
+          ...prev,
+          [reception.receptionId]: (prev[reception.receptionId] || []).map((msg) => ({
+            ...msg,
+            readByStore: true,
+          })),
+        }));
+        
+        // API呼び出しで既読状態をDB更新
+        await markMessagesAsRead(reception.receptionId, messageList);
       }
+    } catch (error) {
+      console.error('Error fetching messages:', error);
     }
   };
 
@@ -445,6 +473,8 @@ export default function Dashboard() {
     const reception = receptions.find((r) => r.receptionId === receptionId);
     if (!reception) return;
 
+    const reactivatedAt = new Date().toISOString();
+
     // 楽観的更新
     setReceptions((prev) =>
       prev.map((r) =>
@@ -452,7 +482,8 @@ export default function Dashboard() {
           ? {
               ...r,
               messagingSessionStatus: 'active' as const,
-              sessionReactivatedAt: new Date().toISOString(),
+              sessionReactivatedAt: reactivatedAt,
+              sessionCloseReason: undefined, // タイムアウト理由をクリア
             }
           : r
       )
@@ -464,7 +495,8 @@ export default function Dashboard() {
           ? {
               ...prev,
               messagingSessionStatus: 'active' as const,
-              sessionReactivatedAt: new Date().toISOString(),
+              sessionReactivatedAt: reactivatedAt,
+              sessionCloseReason: undefined, // タイムアウト理由をクリア
             }
           : null
       );
