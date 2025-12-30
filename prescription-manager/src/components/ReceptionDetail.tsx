@@ -380,30 +380,47 @@ export default function ReceptionDetail({
             </div>
 
             {/* クイックメッセージボタン */}
-            <div className="pt-2">
-              <button
-                onClick={() => setActiveTab('message')}
-                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gacky-green text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                <span>お客様にメッセージを送る</span>
-                {reception.messagingSessionStatus === 'active' && (
-                  <span className="ml-2 flex items-center">
-                    <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
-                  </span>
-                )}
-              </button>
-            </div>
+            {reception.status !== 'completed' && reception.status !== 'cancelled' ? (
+              <div className="pt-2">
+                <button
+                  onClick={() => setActiveTab('message')}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gacky-green text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <span>お客様にメッセージを送る</span>
+                  {reception.messagingSessionStatus === 'active' && (
+                    <span className="ml-2 flex items-center">
+                      <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                    </span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="pt-2 p-3 bg-gray-100 rounded-lg text-center">
+                <p className="text-sm text-gray-500">
+                  {reception.status === 'completed' ? '受取完了' : 'キャンセル'}済みのため、メッセージは送信できません
+                </p>
+              </div>
+            )}
           </div>
         ) : (
+          // メッセージタブの内容
           <MessagePanel
             receptionId={reception.receptionId}
             customerName={reception.userDisplayName || 'お客様'}
             messages={messages}
             onSendMessage={handleSendMessageWrapper}
             isEmbedded={true}
+            readOnly={reception.status === 'completed' || reception.status === 'cancelled'}
+            readOnlyReason={
+              reception.status === 'completed' 
+                ? '受取完了済みのため、メッセージは送信できません' 
+                : reception.status === 'cancelled'
+                ? 'キャンセル済みのため、メッセージは送信できません'
+                : ''
+            }
           />
         )}
       </div>
