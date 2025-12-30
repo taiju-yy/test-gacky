@@ -1,10 +1,18 @@
 /**
  * LINE Messaging API クライアント
+ * 
+ * 注意: Amplify Compute では環境変数はランタイム時に読み取る必要があります。
+ * トップレベルで process.env を参照すると、ビルド時に評価されて undefined になります。
  */
 
 import axios from 'axios';
 
-const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+/**
+ * 環境変数からLINEトークンを取得（ランタイム時に評価）
+ */
+function getLineChannelAccessToken(): string | undefined {
+  return process.env.LINE_CHANNEL_ACCESS_TOKEN;
+}
 
 interface PushMessageParams {
   to: string;
@@ -20,6 +28,9 @@ interface PushMessageParams {
  * LINE Push メッセージを送信
  */
 export async function pushMessage(params: PushMessageParams): Promise<boolean> {
+  // ランタイム時に環境変数を取得（Amplify Compute対応）
+  const LINE_CHANNEL_ACCESS_TOKEN = getLineChannelAccessToken();
+  
   // デバッグ情報を詳細にログ
   console.log('[LINE API] pushMessage called');
   console.log('[LINE API] Target userId:', params.to);
