@@ -1,0 +1,29 @@
+version: 1
+applications:
+  - frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci --cache .npm --prefer-offline
+        build:
+          commands:
+            # 環境変数を .env.production に書き出し（Amplify Compute ランタイム用）
+            - echo "LINE_CHANNEL_ACCESS_TOKEN=$LINE_CHANNEL_ACCESS_TOKEN" >> .env.production
+            - echo "APP_AWS_REGION=$APP_AWS_REGION" >> .env.production
+            - echo "NEXT_PUBLIC_AWS_REGION=$NEXT_PUBLIC_AWS_REGION" >> .env.production
+            - echo "TABLE_PRESCRIPTIONS=$TABLE_PRESCRIPTIONS" >> .env.production
+            - echo "TABLE_MESSAGES=$TABLE_MESSAGES" >> .env.production
+            - echo "TABLE_CUSTOMER_SESSIONS=$TABLE_CUSTOMER_SESSIONS" >> .env.production
+            - echo "TABLE_STORES=$TABLE_STORES" >> .env.production
+            - echo "TABLE_CUSTOMER_PROFILES=$TABLE_CUSTOMER_PROFILES" >> .env.production
+            # ビルド実行
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - '.next/cache/**/*'
+          - '.npm/**/*'
+    appRoot: prescription-manager
