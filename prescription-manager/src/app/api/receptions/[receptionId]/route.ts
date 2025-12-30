@@ -124,6 +124,41 @@ export async function PATCH(
         expressionAttributeValues[':staffNote'] = data.staffNote;
         break;
 
+      case 'reactivateSession':
+        // セッションを再開（タイムアウト後に店舗スタッフが手動で再開）
+        updateExpression += ', messagingSessionStatus = :sessionStatus, sessionReactivatedAt = :reactivatedAt';
+        expressionAttributeValues[':sessionStatus'] = 'active';
+        expressionAttributeValues[':reactivatedAt'] = new Date().toISOString();
+        
+        // お客様にセッション再開を通知
+        if (data.userId) {
+          const message = '【お知らせ】\n\nあおぞら薬局からメッセージの受付を再開しました。\n\nご質問やご連絡がございましたら、こちらにメッセージをお送りください。';
+          const sent = await sendTextMessage(data.userId, message);
+          console.log(`Session reactivation notification sent to ${data.userId}: ${sent}`);
+        }
+        
+        // セッションテーブルも更新（Lambda側と同期）
+        try {
+          const sessionTimestamp = new Date().toISOString();
+          await dynamoDB.send(new PutCommand({
+            TableName: TABLES.SESSIONS,
+            Item: {
+              userId: data.userId,
+              activeReceptionId: receptionId,
+              messagingSessionStatus: 'active',
+              lastStoreMessageAt: sessionTimestamp,
+              lastCustomerMessageAt: null,
+              sessionStartedAt: sessionTimestamp,
+              sessionReactivatedAt: sessionTimestamp,
+              sessionTimeoutMinutes: 30,
+              updatedAt: sessionTimestamp,
+            },
+          }));
+        } catch (sessionError) {
+          console.error('Error updating session table:', sessionError);
+        }
+        break;
+
       default:
         return NextResponse.json(
           { success: false, error: 'Invalid action' },

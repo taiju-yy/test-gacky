@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[Messages API] POST received:', JSON.stringify(body));
+    
     const { 
       receptionId, 
       userId,
@@ -59,7 +61,10 @@ export async function POST(request: NextRequest) {
       timestamp: receptionTimestamp, // 受付のtimestamp（更新用）
     } = body;
 
+    console.log('[Messages API] Extracted values - receptionId:', receptionId, ', userId:', userId, ', content length:', content?.length);
+
     if (!receptionId || !content) {
+      console.error('[Messages API] Missing required fields');
       return NextResponse.json(
         { success: false, error: 'receptionId and content are required' },
         { status: 400 }
@@ -93,8 +98,14 @@ export async function POST(request: NextRequest) {
 
     // LINE Push API でお客様にメッセージを送信
     let lineDelivered = false;
+    console.log('[Messages API] Checking userId for LINE delivery:', userId);
+    
     if (userId) {
+      console.log('[Messages API] Attempting LINE delivery to userId:', userId);
       lineDelivered = await sendTextMessage(userId, content);
+      console.log('[Messages API] LINE delivery result:', lineDelivered);
+    } else {
+      console.warn('[Messages API] WARNING: No userId provided - cannot send LINE message');
     }
 
     // LINE送信結果を更新

@@ -380,6 +380,60 @@ export default function Dashboard() {
     }
   };
 
+  // セッション再開ハンドラ
+  const handleReactivateSession = async (receptionId: string) => {
+    const reception = receptions.find((r) => r.receptionId === receptionId);
+    if (!reception) return;
+
+    // 楽観的更新
+    setReceptions((prev) =>
+      prev.map((r) =>
+        r.receptionId === receptionId
+          ? {
+              ...r,
+              messagingSessionStatus: 'active' as const,
+              sessionReactivatedAt: new Date().toISOString(),
+            }
+          : r
+      )
+    );
+
+    if (selectedReception?.receptionId === receptionId) {
+      setSelectedReception((prev) =>
+        prev
+          ? {
+              ...prev,
+              messagingSessionStatus: 'active' as const,
+              sessionReactivatedAt: new Date().toISOString(),
+            }
+          : null
+      );
+    }
+
+    // API呼び出し
+    try {
+      const response = await fetch(`/api/receptions/${receptionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reactivateSession',
+          timestamp: reception.timestamp,
+          userId: reception.userId,
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Failed to reactivate session:', data.error);
+        // エラー時はリフェッチ
+        fetchReceptions();
+      }
+    } catch (err) {
+      console.error('Error reactivating session:', err);
+      fetchReceptions();
+    }
+  };
+
   // ローディング表示
   if (isLoading) {
     return (
@@ -475,6 +529,7 @@ export default function Dashboard() {
                 onStatusChange={handleStatusChange}
                 onStoreAssign={handleStoreAssign}
                 onSendMessage={handleSendMessage}
+                onReactivateSession={handleReactivateSession}
                 onClose={() => setSelectedReception(null)}
               />
             ) : (

@@ -17,6 +17,14 @@ export type MessagingSessionStatus =
   | 'active'       // 店舗とやりとり中（AI応答スキップ）
   | 'closed';      // やりとり終了（AI応答有効に戻る）
 
+// セッション終了理由
+export type SessionCloseReason = 
+  | 'manual'       // 手動終了
+  | 'ready'        // 準備完了
+  | 'completed'    // 受取完了
+  | 'cancelled'    // キャンセル
+  | 'timeout';     // タイムアウト
+
 // 店舗情報
 export interface Store {
   storeId: string;
@@ -60,6 +68,17 @@ export interface PrescriptionReception {
   assignedAt?: string;           // 店舗割振り日時
   readyAt?: string;              // 準備完了日時
   completedAt?: string;          // 受取完了日時
+  sessionClosedAt?: string;      // セッション終了日時
+  sessionCloseReason?: SessionCloseReason; // セッション終了理由
+  sessionReactivatedAt?: string; // セッション再開日時
+  
+  // メッセージ関連（UI表示用）
+  unreadMessageCount?: number;   // 未読メッセージ数
+  lastMessage?: {                // 最新メッセージ
+    content: string;
+    timestamp: string;
+    senderType: 'customer' | 'store' | 'system';
+  };
   
   // TTL（1年後に自動削除）
   ttl: number;

@@ -20,12 +20,25 @@ interface PushMessageParams {
  * LINE Push メッセージを送信
  */
 export async function pushMessage(params: PushMessageParams): Promise<boolean> {
+  // デバッグ情報を詳細にログ
+  console.log('[LINE API] pushMessage called');
+  console.log('[LINE API] Target userId:', params.to);
+  console.log('[LINE API] Message count:', params.messages.length);
+  console.log('[LINE API] TOKEN configured:', LINE_CHANNEL_ACCESS_TOKEN ? 'Yes (length: ' + LINE_CHANNEL_ACCESS_TOKEN.length + ')' : 'NO - TOKEN MISSING!');
+
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
-    console.error('LINE_CHANNEL_ACCESS_TOKEN is not configured');
+    console.error('[LINE API] ERROR: LINE_CHANNEL_ACCESS_TOKEN is not configured');
+    console.error('[LINE API] Environment check - available vars:', Object.keys(process.env).filter(k => k.includes('LINE')));
+    return false;
+  }
+
+  if (!params.to) {
+    console.error('[LINE API] ERROR: userId (to) is empty or undefined');
     return false;
   }
 
   try {
+    console.log('[LINE API] Sending request to LINE API...');
     const response = await axios.post(
       'https://api.line.me/v2/bot/message/push',
       params,
@@ -37,10 +50,14 @@ export async function pushMessage(params: PushMessageParams): Promise<boolean> {
       }
     );
     
-    console.log('LINE message sent successfully:', response.status);
+    console.log('[LINE API] SUCCESS - Status:', response.status);
+    console.log('[LINE API] Response headers:', JSON.stringify(response.headers));
     return true;
   } catch (error: any) {
-    console.error('Error sending LINE message:', error.response?.data || error.message);
+    console.error('[LINE API] ERROR sending message');
+    console.error('[LINE API] Error status:', error.response?.status);
+    console.error('[LINE API] Error data:', JSON.stringify(error.response?.data));
+    console.error('[LINE API] Error message:', error.message);
     return false;
   }
 }

@@ -27,6 +27,7 @@ const s3Client = new S3Client({});
 const TABLE_PRESCRIPTIONS = process.env.TABLE_PRESCRIPTIONS || 'gacky-prescriptions';
 const TABLE_PRESCRIPTION_MESSAGES = process.env.TABLE_PRESCRIPTION_MESSAGES || 'gacky-prescription-messages';
 const TABLE_CUSTOMER_SESSIONS = process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-customer-messaging-sessions';
+const TABLE_CUSTOMER_PROFILES = process.env.TABLE_CUSTOMER_PROFILES || 'gacky-customer-profiles';
 
 // S3バケット
 const PRESCRIPTION_BUCKET = process.env.PRESCRIPTION_BUCKET || 'gacky-prescriptions';
@@ -94,6 +95,9 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
       Item: receptionItem,
     }));
 
+    // お客様プロフィールを更新（将来の履歴統合表示用）
+    await updateCustomerProfile(userId, userProfile, null, null);
+
     console.log(`Prescription reception created: ${receptionId}`);
 
     return {
@@ -159,9 +163,9 @@ async function checkActiveMessagingSession(userId) {
           sessionStatus: 'active',
         };
       } else if (lastActivityTime > 0) {
-        // タイムアウト - セッションを閉じる
-        console.log(`Session timeout for user ${userId}, closing session`);
-        await closeMessagingSession(userId);
+        // タイムアウト - セッションを閉じてお客様に通知
+        console.log(`Session timeout for user ${userId}, closing session and notifying customer`);
+        await closeMessagingSession(userId, 'timeout', true);
       }
     }
 
@@ -242,8 +246,12 @@ async function activateMessagingSession(userId, receptionId) {
  * - 店舗スタッフが「受け渡し完了」ボタンを押した時
  * - 店舗スタッフが「キャンセル」ボタンを押した時
  * - セッションタイムアウト時
+ * 
+ * @param {string} userId - LINEユーザーID
+ * @param {string} reason - 終了理由 ('manual' | 'ready' | 'completed' | 'cancelled' | 'timeout')
+ * @param {boolean} sendTimeoutNotification - タイムアウト時にお客様へLINE通知を送るか
  */
-async function closeMessagingSession(userId, reason = 'manual') {
+async function closeMessagingSession(userId, reason = 'manual', sendTimeoutNotification = false) {
   try {
     const session = await dynamoDB.send(new GetCommand({
       TableName: TABLE_CUSTOMER_SESSIONS,
@@ -267,6 +275,21 @@ async function closeMessagingSession(userId, reason = 'manual') {
             ':reason': reason,
           },
         }));
+      }
+    }
+
+    // タイムアウトの場合、お客様にLINE通知を送信
+    if (reason === 'timeout' && sendTimeoutNotification) {
+      try {
+        // 受付情報から店舗名を取得
+        const reception = session.Item?.activeReceptionId 
+          ? await getReceptionById(session.Item.activeReceptionId)
+          : null;
+        const storeName = reception?.selectedStoreName || null;
+        await sendSessionTimeoutNotification(userId, storeName);
+      } catch (notifyError) {
+        console.error('Error sending timeout notification:', notifyError);
+        // 通知失敗でもセッションクローズは続行
       }
     }
 
@@ -320,19 +343,32 @@ async function getReceptionById(receptionId) {
 /**
  * お客様からのメッセージを店舗にルーティング
  */
-async function routeMessageToStore(userId, receptionId, messageContent, messageType = 'text') {
+async function routeMessageToStore(userId, receptionId, messageContent, messageType = 'text', userProfile = null) {
   try {
     const messageId = `msg_${Date.now()}_${uuidv4().slice(0, 8)}`;
     const timestamp = new Date().toISOString();
 
-    // メッセージを保存
+    // ユーザー名を取得（引数またはプロフィールから）
+    let senderName = 'お客様';
+    if (userProfile?.displayName) {
+      senderName = userProfile.displayName;
+    } else {
+      // プロフィールから取得を試みる
+      const profile = await getCustomerProfile(userId);
+      if (profile?.displayName) {
+        senderName = profile.displayName;
+      }
+    }
+
+    // メッセージを保存（userIdを含める）
     const messageItem = {
       receptionId,
       messageId,
       timestamp,
+      userId, // 将来の履歴統合表示用
       senderType: 'customer',
       senderId: userId,
-      senderName: 'お客様', // TODO: ユーザー名を取得
+      senderName,
       messageType,
       content: messageContent,
       lineDelivered: true, // お客様から受信したメッセージなのでtrue
@@ -387,11 +423,12 @@ async function sendMessageToCustomer(receptionId, storeId, storeName, messageCon
     const messageId = `msg_${Date.now()}_${uuidv4().slice(0, 8)}`;
     const timestamp = new Date().toISOString();
 
-    // メッセージを保存
+    // メッセージを保存（userIdを含める）
     const messageItem = {
       receptionId,
       messageId,
       timestamp,
+      userId, // 将来の履歴統合表示用
       senderType: 'store',
       senderId: storeId,
       senderName: `あおぞら薬局 ${storeName}`,
@@ -402,6 +439,9 @@ async function sendMessageToCustomer(receptionId, storeId, storeName, messageCon
       readByStore: true,
       ttl: getTTL(),
     };
+
+    // お客様プロフィールの「よく使う店舗」を更新
+    await updateCustomerProfile(userId, null, storeId, storeName);
 
     await dynamoDB.send(new PutCommand({
       TableName: TABLE_PRESCRIPTION_MESSAGES,
@@ -532,6 +572,229 @@ async function sendReadyNotification(receptionId, lineClient) {
     return { success: true };
   } catch (error) {
     console.error('Error sending ready notification:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * セッションタイムアウト時にお客様へLINE通知を送信
+ * 
+ * 店舗スタッフとのやり取りが一時停止したことを明確に伝え、
+ * 店舗からの連絡を待つか、電話連絡を案内する
+ * 
+ * @param {string} userId - LINEユーザーID
+ * @param {string|null} storeName - 店舗名（割り当て済みの場合）
+ */
+async function sendSessionTimeoutNotification(userId, storeName = null) {
+  try {
+    // 店舗情報がある場合のメッセージ本文
+    const bodyContents = [
+      {
+        type: 'text',
+        text: '店舗スタッフとの\nメッセージ受付を一時停止しました',
+        weight: 'bold',
+        size: 'md',
+        align: 'center',
+        wrap: true,
+      },
+      {
+        type: 'separator',
+        margin: 'lg',
+      },
+      {
+        type: 'text',
+        text: 'お待たせして申し訳ございません。\n\n一定時間が経過したため、店舗スタッフとのメッセージのやり取りを一時停止しております。',
+        size: 'sm',
+        color: '#666666',
+        wrap: true,
+        margin: 'lg',
+      },
+      {
+        type: 'text',
+        text: '店舗からの連絡をお待ちいただくか、お急ぎの場合は店舗に直接お電話ください。',
+        size: 'sm',
+        color: '#666666',
+        wrap: true,
+        margin: 'md',
+      },
+    ];
+
+    // 店舗名がある場合は表示
+    if (storeName) {
+      bodyContents.push({
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '担当店舗',
+            size: 'xs',
+            color: '#999999',
+          },
+          {
+            type: 'text',
+            text: storeName,
+            size: 'md',
+            weight: 'bold',
+            color: '#4CAF50',
+            margin: 'xs',
+          },
+        ],
+        margin: 'lg',
+        paddingAll: '10px',
+        backgroundColor: '#F5F5F5',
+        cornerRadius: '8px',
+      });
+    }
+
+    // 補足説明
+    bodyContents.push({
+      type: 'text',
+      text: '※ 新たに処方箋を送る場合は「処方箋を送る」からやり直してください。',
+      size: 'xs',
+      color: '#999999',
+      wrap: true,
+      margin: 'lg',
+    });
+
+    const messages = [
+      {
+        type: 'flex',
+        altText: '店舗スタッフとのメッセージ受付を一時停止しました',
+        contents: {
+          type: 'bubble',
+          hero: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '⏰',
+                size: '3xl',
+                align: 'center',
+              },
+            ],
+            paddingAll: '20px',
+            backgroundColor: '#FFF3E0',
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: bodyContents,
+            paddingAll: '20px',
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: {
+                  type: 'uri',
+                  label: '最寄りのあおぞら薬局をさがす',
+                  uri: 'https://aozora-g.jp/store/',
+                },
+                style: 'primary',
+                color: '#4CAF50',
+              },
+            ],
+            paddingAll: '10px',
+          },
+        },
+      },
+    ];
+
+    await axios.post(
+      'https://api.line.me/v2/bot/message/push',
+      {
+        to: userId,
+        messages,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ACCESSTOKEN}`,
+        },
+      }
+    );
+
+    console.log(`Session timeout notification sent to user: ${userId}, store: ${storeName || 'N/A'}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending session timeout notification:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 手動でメッセージングセッションを再開する（店舗スタッフ用）
+ * 
+ * タイムアウトしたセッションを再度アクティブにする
+ * 追加で30分のセッションが開始される
+ */
+async function reactivateMessagingSession(userId, receptionId) {
+  try {
+    const timestamp = new Date().toISOString();
+
+    // セッションを再アクティブ化
+    await dynamoDB.send(new PutCommand({
+      TableName: TABLE_CUSTOMER_SESSIONS,
+      Item: {
+        userId,
+        activeReceptionId: receptionId,
+        messagingSessionStatus: 'active',
+        lastStoreMessageAt: timestamp,
+        lastCustomerMessageAt: null,
+        sessionStartedAt: timestamp,
+        sessionReactivatedAt: timestamp,
+        sessionTimeoutMinutes: SESSION_TIMEOUT_MINUTES,
+        updatedAt: timestamp,
+      },
+    }));
+
+    // 処方箋受付のステータスも更新
+    const reception = await getReceptionById(receptionId);
+    if (reception) {
+      await dynamoDB.send(new UpdateCommand({
+        TableName: TABLE_PRESCRIPTIONS,
+        Key: {
+          receptionId,
+          timestamp: reception.timestamp,
+        },
+        UpdateExpression: 'SET messagingSessionStatus = :status, sessionReactivatedAt = :reactivatedAt',
+        ExpressionAttributeValues: {
+          ':status': 'active',
+          ':reactivatedAt': timestamp,
+        },
+      }));
+    }
+
+    // お客様にセッション再開を通知
+    const messages = [
+      {
+        type: 'text',
+        text: '【お知らせ】\n\nあおぞら薬局からメッセージの受付を再開しました。\n\nご質問やご連絡がございましたら、こちらにメッセージをお送りください。',
+      },
+    ];
+
+    await axios.post(
+      'https://api.line.me/v2/bot/message/push',
+      {
+        to: userId,
+        messages,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ACCESSTOKEN}`,
+        },
+      }
+    );
+
+    console.log(`Messaging session reactivated for user ${userId}, reception ${receptionId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error reactivating messaging session:', error);
     return { success: false, error: error.message };
   }
 }
@@ -697,6 +960,106 @@ async function clearPrescriptionMode(userId) {
 }
 
 /**
+ * お客様プロフィールを更新（将来の履歴統合表示用）
+ * 
+ * 保存される情報:
+ * - 基本情報: displayName, profileImage
+ * - 利用統計: totalReceptionCount, firstUsedAt, lastUsedAt
+ * - よく使う店舗: preferredStoreId, preferredStoreName
+ */
+async function updateCustomerProfile(userId, userProfile, storeId, storeName) {
+  try {
+    const now = new Date().toISOString();
+
+    const updateExpression = [
+      'SET updatedAt = :now',
+      'lastUsedAt = :now',
+      'totalReceptionCount = if_not_exists(totalReceptionCount, :zero) + :one',
+      'firstUsedAt = if_not_exists(firstUsedAt, :now)',
+      'createdAt = if_not_exists(createdAt, :now)',
+    ];
+
+    const expressionAttributeValues = {
+      ':now': now,
+      ':zero': 0,
+      ':one': 1,
+    };
+
+    // ユーザープロフィール情報があれば更新
+    if (userProfile?.displayName) {
+      updateExpression.push('displayName = :displayName');
+      expressionAttributeValues[':displayName'] = userProfile.displayName;
+    }
+    if (userProfile?.pictureUrl) {
+      updateExpression.push('profileImage = :profileImage');
+      expressionAttributeValues[':profileImage'] = userProfile.pictureUrl;
+    }
+
+    // 店舗情報があれば「よく使う店舗」として更新
+    if (storeId) {
+      updateExpression.push('preferredStoreId = :storeId');
+      expressionAttributeValues[':storeId'] = storeId;
+    }
+    if (storeName) {
+      updateExpression.push('preferredStoreName = :storeName');
+      expressionAttributeValues[':storeName'] = storeName;
+    }
+
+    await dynamoDB.send(new UpdateCommand({
+      TableName: TABLE_CUSTOMER_PROFILES,
+      Key: { userId },
+      UpdateExpression: updateExpression.join(', '),
+      ExpressionAttributeValues: expressionAttributeValues,
+    }));
+
+    console.log(`Customer profile updated: ${userId}`);
+    return { success: true };
+  } catch (error) {
+    // プロフィール更新失敗はメインフローを止めない
+    console.error('Error updating customer profile (non-blocking):', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * お客様プロフィールを取得
+ */
+async function getCustomerProfile(userId) {
+  try {
+    const result = await dynamoDB.send(new GetCommand({
+      TableName: TABLE_CUSTOMER_PROFILES,
+      Key: { userId },
+    }));
+    return result.Item || null;
+  } catch (error) {
+    console.error('Error getting customer profile:', error);
+    return null;
+  }
+}
+
+/**
+ * お客様の処方箋履歴を取得（将来の統合表示用）
+ */
+async function getCustomerReceptionHistory(userId, limit = 10) {
+  try {
+    const result = await dynamoDB.send(new QueryCommand({
+      TableName: TABLE_PRESCRIPTIONS,
+      IndexName: 'userId-timestamp-index',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId,
+      },
+      ScanIndexForward: false, // 新しい順
+      Limit: limit,
+    }));
+    return result.Items || [];
+  } catch (error) {
+    console.error('Error getting customer reception history:', error);
+    return [];
+  }
+}
+
+/**
  * 処方箋受付後、「待機中」セッションを開始
  * （店舗からの連絡を待っている状態。この状態ではお客様のメッセージはAIスキップしない）
  */
@@ -739,8 +1102,16 @@ module.exports = {
   checkPrescriptionMode,
   clearPrescriptionMode,
   startWaitingSession,
+  // セッション再開（店舗スタッフ用）
+  reactivateMessagingSession,
+  // お客様プロフィール関連（将来の履歴統合表示用）
+  updateCustomerProfile,
+  getCustomerProfile,
+  getCustomerReceptionHistory,
+  // テーブル名
   TABLE_PRESCRIPTIONS,
   TABLE_PRESCRIPTION_MESSAGES,
   TABLE_CUSTOMER_SESSIONS,
+  TABLE_CUSTOMER_PROFILES,
   SESSION_TIMEOUT_MINUTES,
 };
