@@ -7,6 +7,52 @@ import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
 import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage } from '@/types/prescription';
 
+// セッションタイムアウト時間（分）- Lambda側と同じ値
+const SESSION_TIMEOUT_MINUTES = 30;
+
+/**
+ * セッションがタイムアウトしているかをフロントエンドで判定
+ * Lambda側のcheckActiveMessagingSession()と同じロジック
+ */
+const checkSessionTimeout = (reception: PrescriptionReception): PrescriptionReception => {
+  // アクティブセッションのみチェック
+  if (reception.messagingSessionStatus !== 'active') {
+    return reception;
+  }
+
+  // 最後のアクティビティ時刻を取得
+  // lastStoreMessageAt または lastCustomerMessageAt の新しい方
+  const lastStoreTime = reception.lastStoreMessageAt 
+    ? new Date(reception.lastStoreMessageAt).getTime() 
+    : 0;
+  const lastCustomerTime = reception.lastCustomerMessageAt 
+    ? new Date(reception.lastCustomerMessageAt).getTime() 
+    : 0;
+  
+  // どちらもない場合は、受付時刻を使用
+  let lastActivityTime = Math.max(lastStoreTime, lastCustomerTime);
+  if (lastActivityTime === 0 && reception.timestamp) {
+    lastActivityTime = new Date(reception.timestamp).getTime();
+  }
+
+  const now = Date.now();
+  const timeoutMs = SESSION_TIMEOUT_MINUTES * 60 * 1000;
+
+  // タイムアウト判定
+  if (lastActivityTime > 0 && (now - lastActivityTime >= timeoutMs)) {
+    // フロントエンド側でタイムアウト表示用にステータスを変更
+    return {
+      ...reception,
+      messagingSessionStatus: 'closed',
+      sessionCloseReason: 'timeout',
+      // 表示用フラグ（DynamoDBには保存されない）
+      _isTimeoutByFrontend: true,
+    } as PrescriptionReception & { _isTimeoutByFrontend?: boolean };
+  }
+
+  return reception;
+};
+
 export default function Dashboard() {
   const [receptions, setReceptions] = useState<PrescriptionReception[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -23,7 +69,19 @@ export default function Dashboard() {
       const data = await response.json();
       
       if (data.success) {
-        setReceptions(data.data);
+        // フロントエンドでタイムアウトチェックを適用
+        const receptionsWithTimeoutCheck = data.data.map(checkSessionTimeout);
+        setReceptions(receptionsWithTimeoutCheck);
+        
+        // 選択中の受付も更新（タイムアウトチェック含む）
+        setSelectedReception((prev) => {
+          if (!prev) return null;
+          const updated = receptionsWithTimeoutCheck.find(
+            (r: PrescriptionReception) => r.receptionId === prev.receptionId
+          );
+          return updated ? checkSessionTimeout(updated) : prev;
+        });
+        
         setError(null);
       } else {
         setError(data.error || 'データの取得に失敗しました');
@@ -338,7 +396,9 @@ export default function Dashboard() {
 
   // 受付選択時に未読をクリアしてメッセージを取得
   const handleSelectReception = (reception: PrescriptionReception) => {
-    setSelectedReception(reception);
+    // タイムアウトチェックを適用してから選択
+    const checkedReception = checkSessionTimeout(reception);
+    setSelectedReception(checkedReception);
     
     // メッセージを取得
     fetchMessages(reception.receptionId);

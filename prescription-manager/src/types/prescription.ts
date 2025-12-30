@@ -71,6 +71,8 @@ export interface PrescriptionReception {
   sessionClosedAt?: string;      // セッション終了日時
   sessionCloseReason?: SessionCloseReason; // セッション終了理由
   sessionReactivatedAt?: string; // セッション再開日時
+  lastStoreMessageAt?: string;   // 最後の店舗メッセージ日時
+  lastCustomerMessageAt?: string; // 最後のお客様メッセージ日時
   
   // メッセージ関連（UI表示用）
   unreadMessageCount?: number;   // 未読メッセージ数
