@@ -14,6 +14,10 @@ const { setTimeout } = require('timers/promises');
 const client = new line.messagingApi.MessagingApiClient(
   { channelAccessToken: process.env.ACCESSTOKEN }
 );
+// 画像取得用の BlobClient
+const blobClient = new line.messagingApi.MessagingApiBlobClient(
+  { channelAccessToken: process.env.ACCESSTOKEN }
+);
 const {
   prescriptionFlow,
   getTextContent,
@@ -107,7 +111,7 @@ exports.handler = async (event, context) => {
     return await broadcastHandler(event, context);
   } else if (event.handler === 'analyticsHandler') {
     // Analytics handler for MAU and other metrics
-    return await analyticsHandler(event, context);
+    return await analyticsHandler(event, context);    
   } else if (event.Records && event.Records[0]?.eventSource === 'aws:sqs') {
     // Handle SQS events
     return await sqsHandler(event, context);
@@ -187,12 +191,12 @@ async function defaultHandler(event, context) {
             const messagingSession = await checkActiveMessagingSession(userId);
             if (messagingSession.shouldRouteToStore && messagingSession.receptionId) {
               console.log(`Routing message to store for reception: ${messagingSession.receptionId}`);
-              
+
               // テキストメッセージの場合、店舗にルーティング
               if (messageType === 'text') {
                 await routeMessageToStore(userId, messagingSession.receptionId, text, 'text');
               }
-              
+
               // AI応答をスキップ
               const replyToken = parsedBody.events[0].replyToken;
               await client.replyMessage({
@@ -202,7 +206,7 @@ async function defaultHandler(event, context) {
                   text: '💬 メッセージを店舗に送信しました。\n店舗からの返信をお待ちください。'
                 }]
               });
-              
+
               return {
                 statusCode: 200,
                 headers: { "x-line-status": "OK" },
@@ -218,21 +222,21 @@ async function defaultHandler(event, context) {
               const prescriptionMode = await checkPrescriptionMode(userId);
               if (prescriptionMode.isActive) {
                 console.log(`Prescription mode active for user ${userId}, processing image as prescription`);
-                
+
                 // 処方箋モードを解除
                 await clearPrescriptionMode(userId);
-                
+
                 // 画像を取得して処方箋として処理
                 const messageId = parsedBody.events[0].message.id;
                 try {
                   // LINEから画像コンテンツを取得
-                  const imageContent = await client.getMessageContent(messageId);
+                  const imageContent = await blobClient.getMessageContent(messageId);
                   const chunks = [];
                   for await (const chunk of imageContent) {
                     chunks.push(chunk);
                   }
                   const imageBuffer = Buffer.concat(chunks);
-                  
+
                   // ユーザープロフィールを取得
                   let userProfile = null;
                   try {
@@ -240,14 +244,14 @@ async function defaultHandler(event, context) {
                   } catch (profileError) {
                     console.warn('Could not get user profile:', profileError.message);
                   }
-                  
+
                   // 処方箋として保存
                   const result = await handlePrescriptionImage(userId, userProfile, imageBuffer, messageId);
-                  
+
                   if (result.success) {
                     // 「待機中」セッションを開始（店舗からの連絡待ち）
                     await startWaitingSession(userId, result.receptionId);
-                    
+
                     // 受付確認メッセージを送信
                     const replyToken = parsedBody.events[0].replyToken;
                     const confirmMessage = generateReceptionConfirmMessage(result.receptionId);
@@ -255,7 +259,7 @@ async function defaultHandler(event, context) {
                       replyToken,
                       messages: [confirmMessage]
                     });
-                    
+
                     return {
                       statusCode: 200,
                       headers: { "x-line-status": "OK" },
@@ -515,15 +519,15 @@ async function broadcastHandler(event) {
 async function analyticsHandler(event) {
   try {
     console.log('Analytics event:', JSON.stringify(event));
-    
+
     const { action, yearMonth, userId, months, limit } = event;
-    
+
     switch (action) {
       case 'getMonthlyActiveUsers': {
         // 月別アクティブユーザー取得
         const targetYearMonth = yearMonth || getCurrentYearMonth();
         const result = await getMonthlyActiveUsers(targetYearMonth);
-        
+
         return {
           statusCode: 200,
           body: JSON.stringify({
@@ -532,7 +536,7 @@ async function analyticsHandler(event) {
           }, null, 2)
         };
       }
-      
+
       case 'getUserActivityHistory': {
         // ユーザーのアクティビティ履歴取得
         if (!userId) {
@@ -541,9 +545,9 @@ async function analyticsHandler(event) {
             body: JSON.stringify({ error: 'userId is required' })
           };
         }
-        
+
         const result = await getUserActivityHistory(userId, months || 12);
-        
+
         return {
           statusCode: 200,
           body: JSON.stringify({
@@ -554,11 +558,11 @@ async function analyticsHandler(event) {
           }, null, 2)
         };
       }
-      
+
       case 'getRecentBroadcastLogs': {
         // 最近のブロードキャストログ取得
         const result = await getRecentBroadcastLogs(limit || 50);
-        
+
         return {
           statusCode: 200,
           body: JSON.stringify({
@@ -568,7 +572,7 @@ async function analyticsHandler(event) {
           }, null, 2)
         };
       }
-      
+
       default:
         return {
           statusCode: 400,

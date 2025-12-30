@@ -1,0 +1,574 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Gacky Prescription Management System - Complete Infrastructure (DynamoDB, S3, Cognito, IAM)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name (dev or prod)
+
+  ProjectName:
+    Type: String
+    Default: gacky-prescription
+    Description: Project name for resource naming
+
+  # Cognito設定
+  AdminEmail:
+    Type: String
+    Description: Initial admin user email address
+    Default: ''
+
+  # 既存のGacky LINE Botテーブル名（参照用）
+  ExistingGackyTableName:
+    Type: String
+    Description: Name of existing Gacky conversation table (for reference)
+    Default: ''
+
+Resources:
+  # ==========================================
+  # S3 Bucket - 処方箋画像保存用
+  # ==========================================
+  PrescriptionImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-images-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+            AllowedOrigins:
+              - '*'
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldPrescriptions
+            Status: Enabled
+            ExpirationInDays: 365
+            Prefix: prescriptions/
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================
+  # DynamoDB Tables
+  # ==========================================
+  
+  # 処方箋受付テーブル
+  PrescriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-prescriptions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: receptionId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: storeId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: receptionId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: userId-timestamp-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-timestamp-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: storeId-timestamp-index
+          KeySchema:
+            - AttributeName: storeId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # 処方箋関連メッセージテーブル
+  PrescriptionMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-messages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: receptionId
+          AttributeType: S
+        - AttributeName: messageId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: receptionId
+          KeyType: HASH
+        - AttributeName: messageId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: receptionId-timestamp-index
+          KeySchema:
+            - AttributeName: receptionId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # お客様メッセージングセッションテーブル
+  CustomerMessagingSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-sessions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # 店舗マスタテーブル
+  StoresTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-stores-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: storeId
+          AttributeType: S
+        - AttributeName: region
+          AttributeType: S
+      KeySchema:
+        - AttributeName: storeId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: region-index
+          KeySchema:
+            - AttributeName: region
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # お客様プロフィールテーブル（将来の履歴統合表示用）
+  CustomerProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-customer-profiles-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: lastUsedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: lastUsedAt-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: lastUsedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================
+  # Cognito User Pool - スタッフ認証用
+  # ==========================================
+  StaffUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-staff-${Environment}'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+        InviteMessageTemplate:
+          EmailMessage: |
+            あなたのGacky処方箋管理システムのアカウントが作成されました。
+            
+            ユーザー名: {username}
+            仮パスワード: {####}
+            
+            ログインURL: https://prescription.gacky.jp
+            
+            初回ログイン時にパスワードの変更が必要です。
+          EmailSubject: '[Gacky] 処方箋管理システム - アカウント作成のお知らせ'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      MfaConfiguration: 'OFF'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: store_id
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+      UserPoolTags:
+        Project: Gacky
+        Component: PrescriptionManager
+        Environment: !Ref Environment
+
+  # Cognito App Client
+  StaffUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref StaffUserPool
+      ClientName: !Sub '${ProjectName}-web-${Environment}'
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !If 
+          - IsProd
+          - 'https://prescription.gacky.jp/callback'
+          - 'http://localhost:3000/callback'
+      LogoutURLs:
+        - !If 
+          - IsProd
+          - 'https://prescription.gacky.jp'
+          - 'http://localhost:3000'
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+
+  # Cognito Identity Pool (Optional - for direct AWS access)
+  StaffIdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub '${ProjectName}_staff_${Environment}'
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref StaffUserPoolClient
+          ProviderName: !GetAtt StaffUserPool.ProviderName
+
+  # ==========================================
+  # Cognito User Groups
+  # ==========================================
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref StaffUserPool
+      Description: 管理者 - 全店舗の処方箋管理、スタッフ管理が可能
+      Precedence: 0
+
+  StoreManagerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: store_manager
+      UserPoolId: !Ref StaffUserPool
+      Description: 店舗管理者 - 担当店舗の処方箋管理が可能
+      Precedence: 10
+
+  StoreStaffGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: store_staff
+      UserPoolId: !Ref StaffUserPool
+      Description: 店舗スタッフ - 担当店舗の処方箋閲覧・メッセージ送信が可能
+      Precedence: 20
+
+  # ==========================================
+  # IAM Roles
+  # ==========================================
+  
+  # Cognito認証済みユーザー用ロール
+  CognitoAuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-cognito-auth-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud: !Ref StaffIdentityPool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+      Policies:
+        - PolicyName: CognitoAuthenticatedPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt PrescriptionsTable.Arn
+                  - !Sub '${PrescriptionsTable.Arn}/index/*'
+                  - !GetAtt PrescriptionMessagesTable.Arn
+                  - !Sub '${PrescriptionMessagesTable.Arn}/index/*'
+                  - !GetAtt CustomerMessagingSessionsTable.Arn
+                  - !GetAtt StoresTable.Arn
+                  - !Sub '${StoresTable.Arn}/index/*'
+                  - !GetAtt CustomerProfilesTable.Arn
+                  - !Sub '${CustomerProfilesTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub '${PrescriptionImagesBucket.Arn}/*'
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Identity Pool Role Attachment
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref StaffIdentityPool
+      Roles:
+        authenticated: !GetAtt CognitoAuthenticatedRole.Arn
+
+  # Amplify用IAMロール（オプション）
+  AmplifyServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-amplify-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-Amplify
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Environment
+          Value: !Ref Environment
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+  HasAdminEmail: !Not [!Equals [!Ref AdminEmail, '']]
+
+Outputs:
+  # S3
+  PrescriptionImagesBucketName:
+    Description: Name of the S3 bucket for prescription images
+    Value: !Ref PrescriptionImagesBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ImagesBucket'
+
+  PrescriptionImagesBucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt PrescriptionImagesBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ImagesBucketArn'
+
+  # DynamoDB Tables
+  PrescriptionsTableName:
+    Description: Name of the Prescriptions table
+    Value: !Ref PrescriptionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PrescriptionsTable'
+
+  PrescriptionsTableArn:
+    Description: ARN of the Prescriptions table
+    Value: !GetAtt PrescriptionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PrescriptionsTableArn'
+
+  PrescriptionMessagesTableName:
+    Description: Name of the Prescription Messages table
+    Value: !Ref PrescriptionMessagesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-MessagesTable'
+
+  CustomerSessionsTableName:
+    Description: Name of the Customer Sessions table
+    Value: !Ref CustomerMessagingSessionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SessionsTable'
+
+  StoresTableName:
+    Description: Name of the Stores table
+    Value: !Ref StoresTable
+    Export:
+      Name: !Sub '${AWS::StackName}-StoresTable'
+
+  CustomerProfilesTableName:
+    Description: Name of the Customer Profiles table
+    Value: !Ref CustomerProfilesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CustomerProfilesTable'
+
+  CustomerProfilesTableArn:
+    Description: ARN of the Customer Profiles table
+    Value: !GetAtt CustomerProfilesTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CustomerProfilesTableArn'
+
+  # Cognito
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref StaffUserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt StaffUserPool.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolArn'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref StaffUserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
+
+  IdentityPoolId:
+    Description: Cognito Identity Pool ID
+    Value: !Ref StaffIdentityPool
+    Export:
+      Name: !Sub '${AWS::StackName}-IdentityPoolId'
+
+  # IAM
+  AmplifyServiceRoleArn:
+    Description: ARN of Amplify Service Role
+    Value: !GetAtt AmplifyServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyRoleArn'
+
+  # Configuration Summary (for .env file)
+  ConfigurationSummary:
+    Description: Configuration values for .env file
+    Value: !Sub |
+      # Prescription Manager Environment Variables
+      NEXT_PUBLIC_AWS_REGION=${AWS::Region}
+      NEXT_PUBLIC_USER_POOL_ID=${StaffUserPool}
+      NEXT_PUBLIC_USER_POOL_CLIENT_ID=${StaffUserPoolClient}
+      NEXT_PUBLIC_IDENTITY_POOL_ID=${StaffIdentityPool}
+      
+      # DynamoDB Tables
+      TABLE_PRESCRIPTIONS=${PrescriptionsTable}
+      TABLE_MESSAGES=${PrescriptionMessagesTable}
+      TABLE_SESSIONS=${CustomerMessagingSessionsTable}
+      TABLE_STORES=${StoresTable}
+      TABLE_CUSTOMER_PROFILES=${CustomerProfilesTable}
+      
+      # S3
+      S3_PRESCRIPTION_BUCKET=${PrescriptionImagesBucket}

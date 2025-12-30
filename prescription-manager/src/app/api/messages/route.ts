@@ -1,13 +1,13 @@
 /**
  * メッセージAPI
- * GET: メッセージ一覧を取得
+ * GET: メッセージ一覧を取得（DynamoDBから）
  * POST: メッセージを送信（店舗→お客様）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-// デモ用メッセージデータ
-const demoMessages: Record<string, any[]> = {};
+import { dynamoDB, TABLES, QueryCommand, PutCommand, UpdateCommand } from '@/lib/dynamodb';
+import { sendTextMessage } from '@/lib/line';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +21,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const messages = demoMessages[receptionId] || [];
+    // DynamoDBからメッセージを取得
+    const result = await dynamoDB.send(new QueryCommand({
+      TableName: TABLES.MESSAGES,
+      KeyConditionExpression: 'receptionId = :receptionId',
+      ExpressionAttributeValues: {
+        ':receptionId': receptionId,
+      },
+      ScanIndexForward: true, // 時系列順（古い順）
+    }));
+
+    const messages = result.Items || [];
 
     return NextResponse.json({
       success: true,
@@ -39,7 +49,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { receptionId, storeId, storeName, content, messageType = 'text' } = body;
+    const { 
+      receptionId, 
+      userId,
+      storeId, 
+      storeName, 
+      content, 
+      messageType = 'text',
+      timestamp: receptionTimestamp, // 受付のtimestamp（更新用）
+    } = body;
 
     if (!receptionId || !content) {
       return NextResponse.json(
@@ -48,13 +66,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const messageId = `msg_${Date.now()}`;
+    const messageId = `msg_${uuidv4()}`;
     const timestamp = new Date().toISOString();
 
     const newMessage = {
       receptionId,
       messageId,
       timestamp,
+      userId, // 顧客のuserIdを保存（将来の履歴統合用）
       senderType: 'store',
       senderId: storeId || 'admin',
       senderName: storeName || '管理者',
@@ -63,42 +82,114 @@ export async function POST(request: NextRequest) {
       lineDelivered: false,
       readByCustomer: false,
       readByStore: true,
+      ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
     };
 
-    // メッセージを保存
-    if (!demoMessages[receptionId]) {
-      demoMessages[receptionId] = [];
+    // DynamoDBにメッセージを保存
+    await dynamoDB.send(new PutCommand({
+      TableName: TABLES.MESSAGES,
+      Item: newMessage,
+    }));
+
+    // LINE Push API でお客様にメッセージを送信
+    let lineDelivered = false;
+    if (userId) {
+      lineDelivered = await sendTextMessage(userId, content);
     }
-    demoMessages[receptionId].push(newMessage);
 
-    // TODO: 実際の実装では:
-    // 1. DynamoDB にメッセージを保存
-    // 2. LINE Push API でお客様にメッセージを送信
-    // 3. メッセージングセッションをアクティブに設定
-    // 4. lineDelivered を true に更新
+    // LINE送信結果を更新
+    if (lineDelivered) {
+      await dynamoDB.send(new UpdateCommand({
+        TableName: TABLES.MESSAGES,
+        Key: {
+          receptionId,
+          messageId,
+        },
+        UpdateExpression: 'SET lineDelivered = :delivered, lineDeliveredAt = :deliveredAt',
+        ExpressionAttributeValues: {
+          ':delivered': true,
+          ':deliveredAt': new Date().toISOString(),
+        },
+      }));
+      newMessage.lineDelivered = true;
+    }
 
-    console.log(`Message sent to customer for reception ${receptionId}:`, content);
-
-    // LINE配信をシミュレート
-    setTimeout(() => {
-      const msg = demoMessages[receptionId]?.find((m) => m.messageId === messageId);
-      if (msg) {
-        msg.lineDelivered = true;
-        msg.lineDeliveredAt = new Date().toISOString();
+    // 受付のメッセージングセッションをアクティブに設定
+    if (receptionTimestamp) {
+      try {
+        await dynamoDB.send(new UpdateCommand({
+          TableName: TABLES.PRESCRIPTIONS,
+          Key: {
+            receptionId,
+            timestamp: receptionTimestamp,
+          },
+          UpdateExpression: 'SET messagingSessionStatus = :status, lastStoreMessageAt = :messageAt',
+          ExpressionAttributeValues: {
+            ':status': 'active',
+            ':messageAt': timestamp,
+          },
+        }));
+      } catch (updateError) {
+        console.error('Error updating reception session status:', updateError);
       }
-    }, 1000);
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         ...newMessage,
-        message: 'Message will be delivered to customer via LINE',
+        lineDelivered,
       },
     });
   } catch (error) {
     console.error('Error sending message:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to send message' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * 既読更新用のPATCH
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { receptionId, messageIds } = body;
+
+    if (!receptionId || !messageIds || !Array.isArray(messageIds)) {
+      return NextResponse.json(
+        { success: false, error: 'receptionId and messageIds are required' },
+        { status: 400 }
+      );
+    }
+
+    // 各メッセージの既読状態を更新
+    await Promise.all(
+      messageIds.map((messageId: string) =>
+        dynamoDB.send(new UpdateCommand({
+          TableName: TABLES.MESSAGES,
+          Key: {
+            receptionId,
+            messageId,
+          },
+          UpdateExpression: 'SET readByStore = :read',
+          ExpressionAttributeValues: {
+            ':read': true,
+          },
+        }))
+      )
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: { updated: messageIds.length },
+    });
+  } catch (error) {
+    console.error('Error updating message read status:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update read status' },
       { status: 500 }
     );
   }

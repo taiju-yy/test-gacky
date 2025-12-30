@@ -68,3 +68,32 @@ body {
 .message-system {
   @apply bg-gray-100 text-gray-600 rounded-lg text-center text-sm;
 }
+
+/* Gackyブランドカラー */
+.bg-gacky-green {
+  @apply bg-emerald-500;
+}
+
+/* スクロールバーカスタマイズ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded hover:bg-gray-400;
+}
+
+/* アニメーション */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}

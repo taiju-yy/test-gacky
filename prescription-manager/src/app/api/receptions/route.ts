@@ -1,64 +1,122 @@
 /**
  * 処方箋受付API
- * GET: 受付一覧を取得
+ * GET: 受付一覧を取得（DynamoDBから）
  * POST: 新規受付を作成
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-// デモ用データ（実際の実装ではDynamoDBから取得）
-let demoReceptions = [
-  {
-    receptionId: 'rx_20241225_001',
-    timestamp: new Date().toISOString(),
-    userId: 'U1234567890abcdef',
-    userDisplayName: '山田 太郎',
-    prescriptionImageUrl: '',
-    prescriptionImageKey: '',
-    status: 'pending',
-    messagingSessionStatus: 'inactive',
-    ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
-  },
-  {
-    receptionId: 'rx_20241225_002',
-    timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    userId: 'U2345678901bcdefg',
-    userDisplayName: '佐藤 花子',
-    prescriptionImageUrl: '',
-    prescriptionImageKey: '',
-    selectedStoreId: 'store_001',
-    selectedStoreName: '金沢駅前',
-    status: 'pending',
-    messagingSessionStatus: 'inactive',
-    customerNote: '15時頃に取りに行きたい',
-    ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
-  },
-];
+import { dynamoDB, TABLES, QueryCommand, ScanCommand, PutCommand } from '@/lib/dynamodb';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const storeId = searchParams.get('storeId');
+    const date = searchParams.get('date'); // YYYY-MM-DD形式
 
-    let receptions = [...demoReceptions];
+    // 今日の日付を取得（日本時間）
+    const today = new Date();
+    today.setHours(today.getHours() + 9); // JST
+    const todayStr = today.toISOString().split('T')[0];
+    const targetDate = date || todayStr;
 
-    // ステータスでフィルタ
+    let receptions: any[] = [];
+
+    // ステータスでフィルタする場合はGSIを使用
     if (status && status !== 'all') {
-      receptions = receptions.filter((r) => r.status === status);
+      const queryParams = {
+        TableName: TABLES.PRESCRIPTIONS,
+        IndexName: 'status-timestamp-index',
+        KeyConditionExpression: '#status = :status',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':status': status,
+        },
+        ScanIndexForward: false, // 降順
+        Limit: 100,
+      };
+
+      const result = await dynamoDB.send(new QueryCommand(queryParams));
+      receptions = result.Items || [];
+    } 
+    // 店舗でフィルタする場合
+    else if (storeId) {
+      const queryParams = {
+        TableName: TABLES.PRESCRIPTIONS,
+        IndexName: 'storeId-timestamp-index',
+        KeyConditionExpression: 'selectedStoreId = :storeId',
+        ExpressionAttributeValues: {
+          ':storeId': storeId,
+        },
+        ScanIndexForward: false,
+        Limit: 100,
+      };
+
+      const result = await dynamoDB.send(new QueryCommand(queryParams));
+      receptions = result.Items || [];
+    }
+    // 全件取得（Scan - 本番では避けるべき）
+    else {
+      const scanParams = {
+        TableName: TABLES.PRESCRIPTIONS,
+        Limit: 100,
+      };
+
+      const result = await dynamoDB.send(new ScanCommand(scanParams));
+      receptions = result.Items || [];
+
+      // タイムスタンプで降順ソート
+      receptions.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
     }
 
-    // 店舗でフィルタ
-    if (storeId) {
-      receptions = receptions.filter((r) => r.selectedStoreId === storeId);
-    }
+    // メッセージテーブルから各受付の最新メッセージと未読数を取得
+    const receptionsWithMessages = await Promise.all(
+      receptions.map(async (reception) => {
+        try {
+          // メッセージを取得
+          const messagesResult = await dynamoDB.send(new QueryCommand({
+            TableName: TABLES.MESSAGES,
+            KeyConditionExpression: 'receptionId = :receptionId',
+            ExpressionAttributeValues: {
+              ':receptionId': reception.receptionId,
+            },
+            ScanIndexForward: false, // 降順
+            Limit: 10,
+          }));
 
-    // タイムスタンプで降順ソート
-    receptions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          const messages = messagesResult.Items || [];
+          
+          // 最新メッセージ
+          const lastMessage = messages.length > 0 ? {
+            content: messages[0].content,
+            timestamp: messages[0].timestamp,
+            senderType: messages[0].senderType,
+          } : undefined;
+
+          // 未読数（店舗側で未読のメッセージ）
+          const unreadMessageCount = messages.filter(
+            (msg: any) => msg.senderType === 'customer' && !msg.readByStore
+          ).length;
+
+          return {
+            ...reception,
+            lastMessage,
+            unreadMessageCount,
+          };
+        } catch (error) {
+          console.error(`Error fetching messages for ${reception.receptionId}:`, error);
+          return reception;
+        }
+      })
+    );
 
     return NextResponse.json({
       success: true,
-      data: receptions,
+      data: receptionsWithMessages,
     });
   } catch (error) {
     console.error('Error fetching receptions:', error);
@@ -73,17 +131,23 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    // TODO: 実際の実装では DynamoDB に保存
+    const receptionId = `rx_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+    const timestamp = new Date().toISOString();
+    
     const newReception = {
-      receptionId: `rx_${Date.now()}`,
-      timestamp: new Date().toISOString(),
+      receptionId,
+      timestamp,
       ...body,
       status: 'pending',
       messagingSessionStatus: 'inactive',
       ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+      createdAt: timestamp,
     };
 
-    demoReceptions.unshift(newReception);
+    await dynamoDB.send(new PutCommand({
+      TableName: TABLES.PRESCRIPTIONS,
+      Item: newReception,
+    }));
 
     return NextResponse.json({
       success: true,
