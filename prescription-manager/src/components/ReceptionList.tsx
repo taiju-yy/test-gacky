@@ -96,6 +96,13 @@ export default function ReceptionList({ receptions, onSelect, selectedId }: Rece
                 </div>
                 
                 <div className="flex items-center space-x-3">
+                  {/* 未読メッセージバッジ */}
+                  {reception.unreadMessageCount && reception.unreadMessageCount > 0 && (
+                    <span className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
+                      {reception.unreadMessageCount > 9 ? '9+' : reception.unreadMessageCount}
+                    </span>
+                  )}
+                  
                   {/* メッセージ中インジケータ */}
                   {reception.messagingSessionStatus === 'active' && (
                     <span className="flex items-center text-xs text-orange-600">

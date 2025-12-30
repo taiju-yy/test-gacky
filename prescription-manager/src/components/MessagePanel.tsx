@@ -66,6 +66,15 @@ export default function MessagePanel({
     });
   };
 
+  // メッセージをtimestampで時系列順（昇順）にソート
+  const sortMessagesByTimestamp = (msgs: PrescriptionMessage[]): PrescriptionMessage[] => {
+    return [...msgs].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
+  };
+
   // メッセージを日付ごとにグループ化
   const groupMessagesByDate = (msgs: PrescriptionMessage[]) => {
     const groups: { [key: string]: PrescriptionMessage[] } = {};
@@ -79,7 +88,9 @@ export default function MessagePanel({
     return groups;
   };
 
-  const messageGroups = groupMessagesByDate(messages);
+  // まずソートしてからグループ化
+  const sortedMessages = sortMessagesByTimestamp(messages);
+  const messageGroups = groupMessagesByDate(sortedMessages);
 
   return (
     <div className={`flex flex-col ${isEmbedded ? 'h-full' : 'h-96'}`}>
