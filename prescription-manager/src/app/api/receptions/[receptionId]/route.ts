@@ -5,8 +5,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { dynamoDB, TABLES, GetCommand, UpdateCommand, QueryCommand, PutCommand } from '@/lib/dynamodb';
+import { getDynamoDBClient, TABLES, GetCommand, UpdateCommand, QueryCommand, PutCommand } from '@/lib/dynamodb';
 import { sendReadyNotification, sendTextMessage } from '@/lib/line';
+
+// DynamoDB クライアントを取得
+const getDB = () => getDynamoDBClient();
 
 export async function GET(
   request: NextRequest,
@@ -16,7 +19,7 @@ export async function GET(
     const { receptionId } = params;
     
     // まずScanで該当の受付を探す（timestampが不明なため）
-    const result = await dynamoDB.send(new QueryCommand({
+    const result = await getDB().send(new QueryCommand({
       TableName: TABLES.PRESCRIPTIONS,
       IndexName: 'userId-timestamp-index',
       KeyConditionExpression: 'userId = :userId',
@@ -28,7 +31,7 @@ export async function GET(
     }));
 
     // GSIでreceptionIdを検索できないので、Scanを使用
-    const { Items } = await dynamoDB.send(new QueryCommand({
+    const { Items } = await getDB().send(new QueryCommand({
       TableName: TABLES.PRESCRIPTIONS,
       KeyConditionExpression: 'receptionId = :receptionId',
       ExpressionAttributeValues: {
@@ -140,7 +143,7 @@ export async function PATCH(
         // セッションテーブルも更新（Lambda側と同期）
         try {
           const sessionTimestamp = new Date().toISOString();
-          await dynamoDB.send(new PutCommand({
+          await getDB().send(new PutCommand({
             TableName: TABLES.SESSIONS,
             Item: {
               userId: data.userId,
@@ -181,7 +184,7 @@ export async function PATCH(
       ReturnValues: 'ALL_NEW' as const,
     };
 
-    const result = await dynamoDB.send(new UpdateCommand(updateParams));
+    const result = await getDB().send(new UpdateCommand(updateParams));
 
     return NextResponse.json({
       success: true,

@@ -4,7 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { dynamoDB, TABLES, ScanCommand, QueryCommand } from '@/lib/dynamodb';
+import { getDynamoDBClient, TABLES, ScanCommand, QueryCommand } from '@/lib/dynamodb';
+
+// DynamoDB クライアントを取得
+const getDB = () => getDynamoDBClient();
 
 // フォールバック用の店舗データ（DynamoDBにデータがない場合）
 // グランファルマ株式会社 あおぞら薬局 全35店舗
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
     try {
       if (region) {
         // リージョンでフィルタ（GSI使用）
-        const result = await dynamoDB.send(new QueryCommand({
+        const result = await getDB().send(new QueryCommand({
           TableName: TABLES.STORES,
           IndexName: 'region-index',
           KeyConditionExpression: 'region = :region',
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
         stores = result.Items || [];
       } else {
         // 全店舗取得
-        const result = await dynamoDB.send(new ScanCommand({
+        const result = await getDB().send(new ScanCommand({
           TableName: TABLES.STORES,
         }));
         stores = result.Items || [];

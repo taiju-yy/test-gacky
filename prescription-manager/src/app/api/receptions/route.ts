@@ -5,7 +5,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { dynamoDB, TABLES, QueryCommand, ScanCommand, PutCommand } from '@/lib/dynamodb';
+import { getDynamoDBClient, TABLES, QueryCommand, ScanCommand, PutCommand } from '@/lib/dynamodb';
+
+// DynamoDB クライアントを取得
+const getDB = () => getDynamoDBClient();
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
         Limit: 100,
       };
 
-      const result = await dynamoDB.send(new QueryCommand(queryParams));
+      const result = await getDB().send(new QueryCommand(queryParams));
       receptions = result.Items || [];
     } 
     // 店舗でフィルタする場合
@@ -54,7 +57,7 @@ export async function GET(request: NextRequest) {
         Limit: 100,
       };
 
-      const result = await dynamoDB.send(new QueryCommand(queryParams));
+      const result = await getDB().send(new QueryCommand(queryParams));
       receptions = result.Items || [];
     }
     // 全件取得（Scan - 本番では避けるべき）
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
         Limit: 100,
       };
 
-      const result = await dynamoDB.send(new ScanCommand(scanParams));
+      const result = await getDB().send(new ScanCommand(scanParams));
       receptions = result.Items || [];
 
       // タイムスタンプで降順ソート
@@ -78,7 +81,7 @@ export async function GET(request: NextRequest) {
       receptions.map(async (reception) => {
         try {
           // メッセージを取得
-          const messagesResult = await dynamoDB.send(new QueryCommand({
+          const messagesResult = await getDB().send(new QueryCommand({
             TableName: TABLES.MESSAGES,
             KeyConditionExpression: 'receptionId = :receptionId',
             ExpressionAttributeValues: {
@@ -144,7 +147,7 @@ export async function POST(request: NextRequest) {
       createdAt: timestamp,
     };
 
-    await dynamoDB.send(new PutCommand({
+    await getDB().send(new PutCommand({
       TableName: TABLES.PRESCRIPTIONS,
       Item: newReception,
     }));

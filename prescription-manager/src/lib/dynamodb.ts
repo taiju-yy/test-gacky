@@ -22,7 +22,7 @@ let dynamoDBInstance: DynamoDBDocumentClient | null = null;
 /**
  * DynamoDB DocumentClient を取得（ランタイム時に初期化）
  */
-function getDynamoDBClient(): DynamoDBDocumentClient {
+export function getDynamoDBClient(): DynamoDBDocumentClient {
   if (!dynamoDBInstance) {
     // 注意: Amplify では AWS_ プレフィックスの環境変数が予約されているため、
     // APP_AWS_REGION または NEXT_PUBLIC_AWS_REGION を使用
@@ -39,22 +39,26 @@ function getDynamoDBClient(): DynamoDBDocumentClient {
   return dynamoDBInstance;
 }
 
-// 後方互換性のため、dynamoDB をエクスポート（getter経由）
+// 後方互換性のため、dynamoDB をエクスポート
+// 注意: 型推論のため、DynamoDBDocumentClient を直接返す
 export const dynamoDB = {
-  send: async (command: any) => {
+  send: async <T>(command: Parameters<DynamoDBDocumentClient['send']>[0]): Promise<T> => {
     const client = getDynamoDBClient();
-    return client.send(command);
+    return client.send(command) as Promise<T>;
   },
 };
 
 /**
  * テーブル名を取得（ランタイム時に評価）
+ * 
+ * 注意: 環境変数名は Lambda 側と揃えている
+ * - TABLE_CUSTOMER_SESSIONS (Lambda) = TABLE_SESSIONS (Next.js) → gacky-prescription-sessions-dev
  */
 export function getTables() {
   return {
     PRESCRIPTIONS: process.env.TABLE_PRESCRIPTIONS || 'gacky-prescription-prescriptions-dev',
     MESSAGES: process.env.TABLE_MESSAGES || 'gacky-prescription-messages-dev',
-    SESSIONS: process.env.TABLE_SESSIONS || 'gacky-prescription-sessions-dev',
+    SESSIONS: process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-prescription-sessions-dev',
     STORES: process.env.TABLE_STORES || 'gacky-prescription-stores-dev',
     CUSTOMER_PROFILES: process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev',
   };
@@ -65,7 +69,7 @@ export function getTables() {
 export const TABLES = {
   get PRESCRIPTIONS() { return process.env.TABLE_PRESCRIPTIONS || 'gacky-prescription-prescriptions-dev'; },
   get MESSAGES() { return process.env.TABLE_MESSAGES || 'gacky-prescription-messages-dev'; },
-  get SESSIONS() { return process.env.TABLE_SESSIONS || 'gacky-prescription-sessions-dev'; },
+  get SESSIONS() { return process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-prescription-sessions-dev'; },
   get STORES() { return process.env.TABLE_STORES || 'gacky-prescription-stores-dev'; },
   get CUSTOMER_PROFILES() { return process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev'; },
 };

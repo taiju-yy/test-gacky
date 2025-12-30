@@ -5,9 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { dynamoDB, TABLES, QueryCommand, PutCommand, UpdateCommand } from '@/lib/dynamodb';
+import { getDynamoDBClient, TABLES, QueryCommand, PutCommand, UpdateCommand } from '@/lib/dynamodb';
 import { sendTextMessage } from '@/lib/line';
 import { v4 as uuidv4 } from 'uuid';
+
+// DynamoDB クライアントを取得
+const getDB = () => getDynamoDBClient();
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     // DynamoDBからメッセージを取得
-    const result = await dynamoDB.send(new QueryCommand({
+    const result = await getDB().send(new QueryCommand({
       TableName: TABLES.MESSAGES,
       KeyConditionExpression: 'receptionId = :receptionId',
       ExpressionAttributeValues: {
@@ -91,7 +94,7 @@ export async function POST(request: NextRequest) {
     };
 
     // DynamoDBにメッセージを保存
-    await dynamoDB.send(new PutCommand({
+    await getDB().send(new PutCommand({
       TableName: TABLES.MESSAGES,
       Item: newMessage,
     }));
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     // LINE送信結果を更新
     if (lineDelivered) {
-      await dynamoDB.send(new UpdateCommand({
+      await getDB().send(new UpdateCommand({
         TableName: TABLES.MESSAGES,
         Key: {
           receptionId,
@@ -128,7 +131,7 @@ export async function POST(request: NextRequest) {
     // 受付のメッセージングセッションをアクティブに設定
     if (receptionTimestamp) {
       try {
-        await dynamoDB.send(new UpdateCommand({
+        await getDB().send(new UpdateCommand({
           TableName: TABLES.PRESCRIPTIONS,
           Key: {
             receptionId,
@@ -142,6 +145,28 @@ export async function POST(request: NextRequest) {
         }));
       } catch (updateError) {
         console.error('Error updating reception session status:', updateError);
+      }
+    }
+
+    // Lambda側のセッションテーブルも更新（AI応答を停止するため）
+    // これがないと Lambda の checkActiveMessagingSession() がセッションを認識しない
+    if (userId) {
+      try {
+        await getDB().send(new PutCommand({
+          TableName: TABLES.SESSIONS,
+          Item: {
+            userId,
+            activeReceptionId: receptionId,
+            messagingSessionStatus: 'active',
+            lastStoreMessageAt: timestamp,
+            sessionStartedAt: timestamp,
+            sessionTimeoutMinutes: 30, // SESSION_TIMEOUT_MINUTES
+            updatedAt: timestamp,
+          },
+        }));
+        console.log('[Messages API] Customer session updated for AI skip - userId:', userId);
+      } catch (sessionError) {
+        console.error('Error updating customer session for AI skip:', sessionError);
       }
     }
 
@@ -179,7 +204,7 @@ export async function PATCH(request: NextRequest) {
     // 各メッセージの既読状態を更新
     await Promise.all(
       messageIds.map((messageId: string) =>
-        dynamoDB.send(new UpdateCommand({
+        getDB().send(new UpdateCommand({
           TableName: TABLES.MESSAGES,
           Key: {
             receptionId,

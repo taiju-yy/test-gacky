@@ -23,11 +23,11 @@ const dynamoDBClient = new DynamoDBClient({});
 const dynamoDB = DynamoDBDocumentClient.from(dynamoDBClient);
 const s3Client = new S3Client({});
 
-// テーブル名
-const TABLE_PRESCRIPTIONS = process.env.TABLE_PRESCRIPTIONS || 'gacky-prescriptions';
-const TABLE_PRESCRIPTION_MESSAGES = process.env.TABLE_PRESCRIPTION_MESSAGES || 'gacky-prescription-messages';
-const TABLE_CUSTOMER_SESSIONS = process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-customer-messaging-sessions';
-const TABLE_CUSTOMER_PROFILES = process.env.TABLE_CUSTOMER_PROFILES || 'gacky-customer-profiles';
+// テーブル名（環境変数から取得、フォールバックはdev環境のテーブル名）
+const TABLE_PRESCRIPTIONS = process.env.TABLE_PRESCRIPTIONS || 'gacky-prescription-prescriptions-dev';
+const TABLE_PRESCRIPTION_MESSAGES = process.env.TABLE_PRESCRIPTION_MESSAGES || 'gacky-prescription-messages-dev';
+const TABLE_CUSTOMER_SESSIONS = process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-prescription-sessions-dev';
+const TABLE_CUSTOMER_PROFILES = process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev';
 
 // S3バケット
 const PRESCRIPTION_BUCKET = process.env.PRESCRIPTION_BUCKET || 'gacky-prescriptions';
