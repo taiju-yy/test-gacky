@@ -21,16 +21,19 @@ const checkSessionTimeout = (reception: PrescriptionReception): PrescriptionRece
   }
 
   // 最後のアクティビティ時刻を取得
-  // lastStoreMessageAt または lastCustomerMessageAt の新しい方
+  // lastStoreMessageAt, lastCustomerMessageAt, sessionReactivatedAt の最新を使用
   const lastStoreTime = reception.lastStoreMessageAt 
     ? new Date(reception.lastStoreMessageAt).getTime() 
     : 0;
   const lastCustomerTime = reception.lastCustomerMessageAt 
     ? new Date(reception.lastCustomerMessageAt).getTime() 
     : 0;
+  const sessionReactivatedTime = reception.sessionReactivatedAt
+    ? new Date(reception.sessionReactivatedAt).getTime()
+    : 0;
   
   // どちらもない場合は、受付時刻を使用
-  let lastActivityTime = Math.max(lastStoreTime, lastCustomerTime);
+  let lastActivityTime = Math.max(lastStoreTime, lastCustomerTime, sessionReactivatedTime);
   if (lastActivityTime === 0 && reception.timestamp) {
     lastActivityTime = new Date(reception.timestamp).getTime();
   }
@@ -470,6 +473,8 @@ export default function Dashboard() {
     const reception = receptions.find((r) => r.receptionId === receptionId);
     if (!reception) return;
 
+    const reactivatedAt = new Date().toISOString();
+
     // 楽観的更新
     setReceptions((prev) =>
       prev.map((r) =>
@@ -477,7 +482,8 @@ export default function Dashboard() {
           ? {
               ...r,
               messagingSessionStatus: 'active' as const,
-              sessionReactivatedAt: new Date().toISOString(),
+              sessionReactivatedAt: reactivatedAt,
+              sessionCloseReason: undefined, // タイムアウト理由をクリア
             }
           : r
       )
@@ -489,7 +495,8 @@ export default function Dashboard() {
           ? {
               ...prev,
               messagingSessionStatus: 'active' as const,
-              sessionReactivatedAt: new Date().toISOString(),
+              sessionReactivatedAt: reactivatedAt,
+              sessionCloseReason: undefined, // タイムアウト理由をクリア
             }
           : null
       );
