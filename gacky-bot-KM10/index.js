@@ -90,7 +90,9 @@ const {
   updateBroadcastLog,
   getMonthlyActiveUsers,
   getUserActivityHistory,
-  getRecentBroadcastLogs
+  getRecentBroadcastLogs,
+  getBroadcastSummary,
+  getEngagementRate
 } = require('./dynamoDBManager');
 
 // 処方箋管理モジュール
@@ -573,6 +575,36 @@ async function analyticsHandler(event) {
         };
       }
 
+      case 'getBroadcastSummary': {
+        // 同一配信をグループ化して取得
+        const { date, days } = event;
+        const result = await getBroadcastSummary({ date, days: days || 7 });
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getBroadcastSummary',
+            count: result.length,
+            summary: result
+          }, null, 2)
+        };
+      }
+
+      case 'getEngagementRate': {
+        // 対話継続率（エンゲージメント率）取得
+        const targetYearMonth = yearMonth || getCurrentYearMonth();
+        const threshold = event.threshold || 3;
+        const result = await getEngagementRate(targetYearMonth, threshold);
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getEngagementRate',
+            ...result
+          }, null, 2)
+        };
+      }
+
       default:
         return {
           statusCode: 400,
@@ -581,7 +613,9 @@ async function analyticsHandler(event) {
             availableActions: [
               'getMonthlyActiveUsers',
               'getUserActivityHistory',
-              'getRecentBroadcastLogs'
+              'getRecentBroadcastLogs',
+              'getBroadcastSummary',
+              'getEngagementRate'
             ],
             examples: {
               getMonthlyActiveUsers: {
@@ -599,6 +633,18 @@ async function analyticsHandler(event) {
                 handler: 'analyticsHandler',
                 action: 'getRecentBroadcastLogs',
                 limit: 10
+              },
+              getBroadcastSummary: {
+                handler: 'analyticsHandler',
+                action: 'getBroadcastSummary',
+                days: 7,
+                date: '2025-12-29'
+              },
+              getEngagementRate: {
+                handler: 'analyticsHandler',
+                action: 'getEngagementRate',
+                yearMonth: '2025-12',
+                threshold: 3
               }
             }
           }, null, 2)
