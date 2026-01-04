@@ -106,12 +106,56 @@ export async function PATCH(
             console.log(`Ready notification sent to ${data.userId}: ${sent}`);
           }
         } else if (data.status === 'completed') {
-          updateExpression += ', completedAt = :completedAt, messagingSessionStatus = :sessionStatus';
+          updateExpression += ', completedAt = :completedAt, messagingSessionStatus = :sessionStatus, sessionCloseReason = :closeReason';
           expressionAttributeValues[':completedAt'] = new Date().toISOString();
           expressionAttributeValues[':sessionStatus'] = 'closed';
+          expressionAttributeValues[':closeReason'] = 'completed';
+          
+          // セッションテーブルも更新（Lambda側のAI応答スキップを解除）
+          if (data.userId) {
+            try {
+              await getDB().send(new UpdateCommand({
+                TableName: TABLES.SESSIONS,
+                Key: { userId: data.userId },
+                UpdateExpression: 'SET messagingSessionStatus = :status, activeReceptionId = :nullVal, sessionClosedAt = :closedAt, sessionCloseReason = :reason, updatedAt = :updatedAt',
+                ExpressionAttributeValues: {
+                  ':status': 'closed',
+                  ':nullVal': null,
+                  ':closedAt': new Date().toISOString(),
+                  ':reason': 'completed',
+                  ':updatedAt': new Date().toISOString(),
+                },
+              }));
+              console.log(`Session closed for user ${data.userId} (completed)`);
+            } catch (sessionError) {
+              console.error('Error closing session:', sessionError);
+            }
+          }
         } else if (data.status === 'cancelled') {
-          updateExpression += ', messagingSessionStatus = :sessionStatus';
+          updateExpression += ', messagingSessionStatus = :sessionStatus, sessionCloseReason = :closeReason';
           expressionAttributeValues[':sessionStatus'] = 'closed';
+          expressionAttributeValues[':closeReason'] = 'cancelled';
+          
+          // セッションテーブルも更新（Lambda側のAI応答スキップを解除）
+          if (data.userId) {
+            try {
+              await getDB().send(new UpdateCommand({
+                TableName: TABLES.SESSIONS,
+                Key: { userId: data.userId },
+                UpdateExpression: 'SET messagingSessionStatus = :status, activeReceptionId = :nullVal, sessionClosedAt = :closedAt, sessionCloseReason = :reason, updatedAt = :updatedAt',
+                ExpressionAttributeValues: {
+                  ':status': 'closed',
+                  ':nullVal': null,
+                  ':closedAt': new Date().toISOString(),
+                  ':reason': 'cancelled',
+                  ':updatedAt': new Date().toISOString(),
+                },
+              }));
+              console.log(`Session closed for user ${data.userId} (cancelled)`);
+            } catch (sessionError) {
+              console.error('Error closing session:', sessionError);
+            }
+          }
         }
         break;
 
