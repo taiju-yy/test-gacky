@@ -1013,6 +1013,158 @@ async function getUserActivityHistory(userId, months = 12) {
   }
 }
 
+/**
+ * ブロードキャストログを同一配信でグループ化して取得
+ * 同じメッセージ内容・同じ日付の配信を1つにまとめる
+ * @param {Object} options - オプション
+ * @param {string} options.date - 特定日付でフィルタ（例: "2025-12-29"）
+ * @param {number} options.days - 過去N日分を取得（デフォルト: 7）
+ * @returns {Array} グループ化された配信サマリー
+ */
+async function getBroadcastSummary(options = {}) {
+  try {
+    const { date, days = 7 } = options;
+    
+    // 全ログを取得
+    const params = {
+      TableName: tableBroadcastLogs
+    };
+    
+    const data = await dynamoDB.send(new ScanCommand(params));
+    let items = data.Items || [];
+    
+    // 日付フィルタ
+    if (date) {
+      items = items.filter(item => item.timestamp && item.timestamp.startsWith(date));
+    } else if (days) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      items = items.filter(item => new Date(item.timestamp) >= cutoffDate);
+    }
+    
+    // メッセージ内容と日付でグループ化
+    const groupedMap = new Map();
+    
+    items.forEach(item => {
+      // メッセージ内容のハッシュキーを生成
+      const messageKey = JSON.stringify(item.messages || []);
+      const dateKey = item.timestamp ? item.timestamp.split('T')[0] : 'unknown';
+      const groupKey = `${dateKey}_${messageKey}`;
+      
+      if (!groupedMap.has(groupKey)) {
+        groupedMap.set(groupKey, {
+          date: dateKey,
+          messages: item.messages || [],
+          title: item.title,
+          broadcastIds: [],
+          totalTargetUserCount: 0,
+          totalSuccessCount: 0,
+          totalFailureCount: 0,
+          totalSkippedCount: 0,
+          firstTimestamp: item.timestamp,
+          lastTimestamp: item.timestamp,
+          batchCount: 0
+        });
+      }
+      
+      const group = groupedMap.get(groupKey);
+      group.broadcastIds.push(item.broadcastId);
+      group.totalTargetUserCount += item.targetUserCount || 0;
+      group.totalSuccessCount += item.successCount || 0;
+      group.totalFailureCount += item.failureCount || 0;
+      group.totalSkippedCount += item.skippedCount || 0;
+      group.batchCount += 1;
+      
+      // タイムスタンプの範囲を更新
+      if (item.timestamp < group.firstTimestamp) {
+        group.firstTimestamp = item.timestamp;
+      }
+      if (item.timestamp > group.lastTimestamp) {
+        group.lastTimestamp = item.timestamp;
+      }
+    });
+    
+    // 結果を配列に変換してソート（新しい順）
+    const result = Array.from(groupedMap.values())
+      .sort((a, b) => new Date(b.firstTimestamp) - new Date(a.firstTimestamp))
+      .map(group => ({
+        ...group,
+        successRate: group.totalTargetUserCount > 0 
+          ? Math.round((group.totalSuccessCount / group.totalTargetUserCount) * 10000) / 100 
+          : 0,
+        messagePreview: group.messages[0]?.message?.substring(0, 50) + '...' || ''
+      }));
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting broadcast summary:', error);
+    return [];
+  }
+}
+
+/**
+ * 対話継続率（エンゲージメント率）を取得
+ * @param {string} yearMonth - 年月（例: "2025-12"）
+ * @param {number} threshold - 対話日数の閾値（デフォルト: 3）
+ * @returns {Object} エンゲージメントデータ
+ */
+async function getEngagementRate(yearMonth, threshold = 3) {
+  try {
+    const params = {
+      TableName: tableUserActivitySummary,
+      FilterExpression: 'yearMonth = :yearMonth',
+      ExpressionAttributeValues: {
+        ':yearMonth': yearMonth
+      }
+    };
+
+    const data = await dynamoDB.send(new ScanCommand(params));
+    const items = data.Items || [];
+
+    const totalActiveUsers = items.length;
+    const engagedUsers = items.filter(item => (item.conversationDays || 0) >= threshold);
+    const engagementRate = totalActiveUsers > 0 
+      ? Math.round((engagedUsers.length / totalActiveUsers) * 10000) / 100 
+      : 0;
+
+    // 会話日数の分布
+    const distribution = {
+      '1日': items.filter(item => (item.conversationDays || 0) === 1).length,
+      '2日': items.filter(item => (item.conversationDays || 0) === 2).length,
+      '3-5日': items.filter(item => (item.conversationDays || 0) >= 3 && (item.conversationDays || 0) <= 5).length,
+      '6-10日': items.filter(item => (item.conversationDays || 0) >= 6 && (item.conversationDays || 0) <= 10).length,
+      '11日以上': items.filter(item => (item.conversationDays || 0) >= 11).length
+    };
+
+    return {
+      yearMonth,
+      threshold,
+      totalActiveUsers,
+      engagedUserCount: engagedUsers.length,
+      engagementRate,
+      distribution,
+      engagedUsers: engagedUsers.map(item => ({
+        userId: item.userId,
+        conversationDays: item.conversationDays,
+        messageCount: item.messageCount,
+        firstMessageAt: item.firstMessageAt,
+        lastMessageAt: item.lastMessageAt
+      }))
+    };
+  } catch (error) {
+    console.error('Error getting engagement rate:', error);
+    return { 
+      yearMonth, 
+      threshold, 
+      totalActiveUsers: 0, 
+      engagedUserCount: 0, 
+      engagementRate: 0, 
+      distribution: {},
+      engagedUsers: [] 
+    };
+  }
+}
+
 // 外部からの利用を可能にするために関数をエクスポート
 module.exports = {
   saveOrUpdateMessage,
@@ -1039,5 +1191,8 @@ module.exports = {
   updateUserActivitySummary,
   getUserActivitySummary,
   getMonthlyActiveUsers,
-  getUserActivityHistory
+  getUserActivityHistory,
+  // Analytics (Enhanced)
+  getBroadcastSummary,
+  getEngagementRate
 };
