@@ -51,7 +51,9 @@
 
 ## DynamoDBテーブル
 
-### gacky-prescriptions
+**注意**: テーブル名は環境によって異なります（例: dev環境では `-dev` サフィックスが付きます）
+
+### gacky-prescription-prescriptions-{env}
 処方箋受付情報を管理
 
 | キー | 型 | 説明 |
@@ -62,7 +64,7 @@
 | status | String | ステータス（pending/confirmed/preparing/ready/completed/cancelled） |
 | messagingSessionStatus | String | メッセージセッション状態（inactive/active/closed） |
 
-### gacky-prescription-messages
+### gacky-prescription-messages-{env}
 店舗⇔お客様のメッセージを管理
 
 | キー | 型 | 説明 |
@@ -72,7 +74,7 @@
 | senderType | String | 送信者タイプ（customer/store/system） |
 | content | String | メッセージ内容 |
 
-### gacky-customer-messaging-sessions
+### gacky-prescription-sessions-{env}
 お客様のメッセージングセッション状態を管理（AI応答スキップ判定用）
 
 | キー | 型 | 説明 |
@@ -81,6 +83,18 @@
 | activeReceptionId | String | アクティブな受付ID |
 | messagingSessionStatus | String | セッション状態 |
 | lastStoreMessageAt | String | 最後の店舗メッセージ日時 |
+
+### gacky-prescription-video-calls-{env}
+ビデオ通話ルーム情報を管理（オンライン服薬指導用）
+
+| キー | 型 | 説明 |
+|------|-----|------|
+| roomId (PK) | String | ルームID |
+| receptionId | String | 受付ID |
+| status | String | ステータス（waiting/active/ended） |
+| storeId | String | 店舗ID |
+| customerId | String | お客様のLINE ユーザーID |
+| ttl | Number | TTL（24時間後に自動削除） |
 
 ## セットアップ
 
@@ -117,19 +131,26 @@ aws cloudformation deploy \
 ### Lambda (gacky-bot)
 
 ```
-TABLE_PRESCRIPTIONS=gacky-prescriptions
-TABLE_PRESCRIPTION_MESSAGES=gacky-prescription-messages
-TABLE_CUSTOMER_SESSIONS=gacky-customer-messaging-sessions
+TABLE_PRESCRIPTIONS=gacky-prescription-prescriptions-dev
+TABLE_MESSAGES=gacky-prescription-messages-dev
+TABLE_CUSTOMER_SESSIONS=gacky-prescription-sessions-dev
 PRESCRIPTION_BUCKET=gacky-prescriptions
+TABLE_VIDEO_CALLS=gacky-prescription-video-calls-dev
 ```
 
-### Web App
+### Web App (Amplify)
 
 ```
-AWS_REGION=ap-northeast-1
-TABLE_PRESCRIPTIONS=gacky-prescriptions
-TABLE_PRESCRIPTION_MESSAGES=gacky-prescription-messages
+APP_AWS_REGION=ap-northeast-1
+TABLE_PRESCRIPTIONS=gacky-prescription-prescriptions-dev
+TABLE_MESSAGES=gacky-prescription-messages-dev
+TABLE_CUSTOMER_SESSIONS=gacky-prescription-sessions-dev
+TABLE_STORES=gacky-prescription-stores-dev
+TABLE_VIDEO_CALLS=gacky-prescription-video-calls-dev
+NEXT_PUBLIC_APP_URL=https://your-amplify-app-url.amplifyapp.com
 ```
+
+**注意**: テーブル名は CloudFormation テンプレート (`cloudformation-tables.yaml`) および `src/lib/dynamodb.ts` のデフォルト値と一致させてください。
 
 ## UXフロー
 
