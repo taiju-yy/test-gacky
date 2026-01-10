@@ -421,6 +421,7 @@ export default function ReceptionDetail({
                 ? 'キャンセル済みのため、メッセージは送信できません'
                 : ''
             }
+            messagingSessionStatus={reception.messagingSessionStatus}
           />
         )}
       </div>

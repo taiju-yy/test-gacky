@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDynamoDBClient, TABLES, QueryCommand, ScanCommand, PutCommand } from '@/lib/dynamodb';
+import { refreshPrescriptionImageUrls } from '@/lib/s3';
 
 // DynamoDB クライアントを取得
 const getDB = () => getDynamoDBClient();
@@ -76,9 +77,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 署名付きURLを再生成（S3の一時クレデンシャル問題対策）
+    const receptionsWithFreshUrls = await refreshPrescriptionImageUrls(receptions);
+
     // メッセージテーブルから各受付の最新メッセージと未読数を取得
     const receptionsWithMessages = await Promise.all(
-      receptions.map(async (reception) => {
+      receptionsWithFreshUrls.map(async (reception) => {
         try {
           // メッセージを取得
           const messagesResult = await getDB().send(new QueryCommand({
