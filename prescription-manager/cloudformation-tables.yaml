@@ -13,10 +13,11 @@ Parameters:
 
 Resources:
   # 処方箋受付テーブル
+  # 注意: テーブル名は dynamodb.ts のデフォルト値および Amplify 環境変数と一致させること
   PrescriptionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub 'gacky-prescriptions-${Environment}'
+      TableName: !Sub 'gacky-prescription-prescriptions-${Environment}'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: receptionId
@@ -84,10 +85,11 @@ Resources:
           Value: PrescriptionManager
 
   # お客様メッセージングセッションテーブル
+  # 注意: テーブル名は dynamodb.ts のデフォルト値および Amplify 環境変数と一致させること
   CustomerMessagingSessionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub 'gacky-customer-messaging-sessions-${Environment}'
+      TableName: !Sub 'gacky-prescription-sessions-${Environment}'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: userId
@@ -95,6 +97,27 @@ Resources:
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+
+  # ビデオ通話ルームテーブル（オンライン服薬指導用）
+  VideoCallRoomsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-prescription-video-calls-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       Tags:
         - Key: Project
           Value: Gacky
@@ -125,3 +148,9 @@ Outputs:
     Value: !Ref CustomerMessagingSessionsTable
     Export:
       Name: !Sub '${AWS::StackName}-CustomerMessagingSessionsTable'
+
+  VideoCallRoomsTableName:
+    Description: Name of the Video Call Rooms table
+    Value: !Ref VideoCallRoomsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-VideoCallRoomsTable'
