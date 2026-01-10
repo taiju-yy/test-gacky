@@ -470,9 +470,13 @@ function sanitizeResponse(responseText) {
 }
 
 async function defaultAction(props) {
-  const { context, parsedBody, userId, messageType, text } = props;
+  const { context, parsedBody, userId, messageType, text, userProfile } = props;
   // 会話履歴の取得
-  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone } = await getMessages(userId);
+  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+  
+  // displayName の決定（LINEプロフィールから取得した最新の名前、またはDBに保存されている名前）
+  const currentDisplayName = userProfile?.displayName || displayName || null;
+  console.log(`Using displayName for conversation: ${currentDisplayName || 'N/A'}`);
 
   // 新しいメッセージを履歴に追加
   messages = [...messages, ...(await prepareMessage(messageType, parsedBody))]
@@ -497,7 +501,7 @@ async function defaultAction(props) {
   if (!availableMessageTypes.includes(messageType)) {
     assistantMessage = "ごめんね。スタンプや動画はまだ分からないんだ。テキストでお話しよ！";
   } else {
-    assistantMessageObj = await fetchClaudeResponse(claudeMessages, currentJST, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone);
+    assistantMessageObj = await fetchClaudeResponse(claudeMessages, currentJST, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, currentDisplayName);
     assistantMessage = pickAssistantMessage(parsedBody, messageType, assistantMessageObj);
 
     // 「あんた」を「あなた」に置換
@@ -521,13 +525,13 @@ async function defaultAction(props) {
     isError = true;
     console.log(`LLM API error for userId: ${userId}`);
   } else {
-    // 応答を履歴に追加
-    await saveOrUpdateMessage(userId, { role: 'user', content: text }); // ユーザーからのメッセージ
+    // 応答を履歴に追加（displayNameも一緒に保存）
+    await saveOrUpdateMessage(userId, { role: 'user', content: text }, 0, currentDisplayName); // ユーザーからのメッセージ
     await saveOrUpdateMessage(userId, {
       role: 'assistant',
       content: assistantMessage,
       systemGenerated: false // AIの応答はsystemGeneratedではない（ユーザーとの会話の一部）
-    });
+    }, 0, currentDisplayName);
     
     // ユーザーアクティビティサマリーを更新（MAU計算用）
     await updateUserActivitySummary(userId);
@@ -632,7 +636,7 @@ function getSeasonalFoodsExample(season) {
 
 // ③ ラッキーフード占い（季節感対応版）
 async function showLuckyFoodFortuneAction(props) {
-  const { userId, text } = props;
+  const { userId, text, userProfile } = props;
   
   try {
     // 現在の日本時間を取得
@@ -647,7 +651,10 @@ async function showLuckyFoodFortuneAction(props) {
     const seasonalFoodsExample = getSeasonalFoodsExample(season);
     
     // ユーザー設定を取得
-    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone } = await getMessages(userId);
+    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+    
+    // displayName の決定
+    const currentDisplayName = userProfile?.displayName || displayName || null;
     
     // ラッキーフード占い用のシステムプロンプトを取得（改良版）
     let fortuneSystemPrompt = await getSystemContent('luckyFoodFortune');
@@ -671,6 +678,7 @@ async function showLuckyFoodFortuneAction(props) {
       content: `「ラッキーフード占い」をお願いします！
 
 今日は${month}月${day}日だよ。今の季節（${season}）にぴったりのラッキーフードを教えて！
+${currentDisplayName ? `（${currentDisplayName}さんへの占いだよ！名前を呼んであげてね）` : ''}
 
 参考までに${season}の食材の例：${seasonalFoodsExample.join('、')} など
 （これ以外の${season}らしい食材でもOK！石川県の地元食材も大歓迎！）
@@ -821,7 +829,7 @@ const getMonthlyContext = (month, day) => {
 
 // ④ Gackyとおしゃべりする - 改善版（全月対応）
 async function startChatWithGackyAction(props) {
-  const { userId, text } = props;
+  const { userId, text, userProfile } = props;
   
   try {
     // 現在の日本時間を取得
@@ -843,7 +851,10 @@ async function startChatWithGackyAction(props) {
     const japaneseDayOfWeek = dayMapping[dayOfWeek];
     
     // ユーザー設定と履歴を取得
-    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone } = await getMessages(userId);
+    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+    
+    // displayName の決定
+    const currentDisplayName = userProfile?.displayName || displayName || null;
     
     // 時間帯別のコンテキスト
     let timeContext = '';
@@ -866,6 +877,7 @@ async function startChatWithGackyAction(props) {
 
 現在：${currentTimeStr}（${japaneseDayOfWeek}）
 時間帯：${timeContext}
+${currentDisplayName ? `お客様のお名前：${currentDisplayName}さん（挨拶で呼びかけてあげてね！）` : ''}
 
 【今月の話題】
 - イベント：${monthlyContext.events}
@@ -880,7 +892,7 @@ ${monthlyContext.specific ? `- 特記事項：${monthlyContext.specific}` : ''}
     // 会話履歴（最近のもの少しだけ含める）
     const greetingMessages = messages.slice(-2).concat([greetingPrompt]);
     
-    // Claude APIで生成
+    // Claude APIで生成（displayNameも渡す）
     const assistantMessageObj = await fetchClaudeResponse(
       greetingMessages,
       currentTimeStr,
@@ -889,7 +901,8 @@ ${monthlyContext.specific ? `- 特記事項：${monthlyContext.specific}` : ''}
       relationshipTone || null,
       coachingStyle || null,
       politenessTone || 'N',
-      attitudeTone || null
+      attitudeTone || null,
+      currentDisplayName
     );
     
     let greetingMessage = assistantMessageObj.commentFromGacky;

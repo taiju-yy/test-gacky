@@ -112,6 +112,7 @@ async function getMessages(userId) {
         relationshipTone: data.Items[0].relationshipTone,
         politenessTone: data.Items[0].politenessTone,
         attitudeTone: data.Items[0].attitudeTone,
+        displayName: data.Items[0].displayName,
       };
       // console.log('getMessages result:', JSON.stringify(result));
       return result;
@@ -125,7 +126,8 @@ async function getMessages(userId) {
         coachingStyle: null,
         relationshipTone: null,
         politenessTone: null,
-        attitudeTone: null
+        attitudeTone: null,
+        displayName: null
       };
     }
   } catch (error) {
@@ -310,9 +312,46 @@ async function updateAttitudeTone(userId, attitudeTone) {
   }  
 }
 
-async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
+/**
+ * ユーザーのdisplayNameを更新する
+ * LINE APIから取得したユーザーの表示名を保存し、会話で活用する
+ * @param {string} userId - LINEユーザーID
+ * @param {string} displayName - LINEの表示名
+ */
+async function updateDisplayName(userId, displayName) {
   try {
-    const { timestamp, messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone } = await getMessages(userId);
+    const { timestamp } = await getMessages(userId);
+    
+    if (!timestamp) {
+      // 会話履歴がまだない場合は新規作成時に設定される
+      console.log(`No existing conversation for user ${userId}, displayName will be set on first message`);
+      return { success: true, newUser: true };
+    }
+    
+    const params = {
+      TableName: table,
+      Key: {
+        userId: userId,
+        timestamp: timestamp
+      },
+      UpdateExpression: "SET displayName = :displayName",
+      ExpressionAttributeValues: {
+        ":displayName": displayName
+      },
+    }
+    
+    await dynamoDB.send(new UpdateCommand(params));
+    console.log(`DisplayName updated for user ${userId}: ${displayName}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating displayName:', error);
+    return { success: false, error: error.message };
+  }  
+}
+
+async function saveOrUpdateMessage(userId, newMessage, retryCount = 0, userDisplayName = null) {
+  try {
+    const { timestamp, messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
     const newTimestamp = new Date().toISOString();
     
     // メッセージを切り詰める
@@ -409,6 +448,13 @@ async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
           console.log(`Updating lastInteractionDate for user ${userId} to ${newTimestamp}`);
         }
         
+        // displayNameが渡されていて、まだ保存されていない場合は更新
+        if (userDisplayName && !displayName) {
+          updateExpression += ', displayName = :displayName';
+          expressionAttributeValues[':displayName'] = userDisplayName;
+          console.log(`Setting displayName for user ${userId}: ${userDisplayName}`);
+        }
+        
         const params = {
           TableName: table,
           Key: {
@@ -437,7 +483,8 @@ async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
             relationshipTone,
             coachingStyle,
             politenessTone,
-            attitudeTone
+            attitudeTone,
+            displayName: userDisplayName || null
           },
           ConditionExpression: 'attribute_not_exists(userId) OR attribute_not_exists(#T)',
           ExpressionAttributeNames: {
@@ -451,7 +498,7 @@ async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
       if (error.name === 'ConditionalCheckFailedException') {
         // 条件チェック失敗 - 最新データで再試行
         console.warn(`ユーザー ${userId} のレコード更新で条件チェックに失敗しました - 再試行します`);
-        return await saveOrUpdateMessage(userId, newMessage, retryCount + 1);
+        return await saveOrUpdateMessage(userId, newMessage, retryCount + 1, userDisplayName);
       }
       throw error;
     }
@@ -461,7 +508,7 @@ async function saveOrUpdateMessage(userId, newMessage, retryCount = 0) {
       const delay = Math.pow(2, retryCount) * 100;
       console.log(`DynamoDB throughput exceeded, retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return saveOrUpdateMessage(userId, newMessage, retryCount + 1);
+      return saveOrUpdateMessage(userId, newMessage, retryCount + 1, userDisplayName);
     }
     console.error('Error saving/updating message:', error);
     return new Error("Failed to save/update message: " + error.message);
@@ -1180,6 +1227,7 @@ module.exports = {
   updatePolitenessTone,
   updateCoachingStyle,
   updateAttitudeTone,
+  updateDisplayName,
   backupToS3,
   truncateMessage,
   // Broadcast Logs

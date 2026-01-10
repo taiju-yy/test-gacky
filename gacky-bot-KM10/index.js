@@ -185,6 +185,15 @@ async function defaultHandler(event, context) {
             const messageType = parsedBody.events[0].message.type;
             const text = getTextContent(messageType, parsedBody);
             const actions = [];
+            
+            // ユーザープロフィールを取得（displayNameの活用のため）
+            let userProfile = null;
+            try {
+              userProfile = await client.getProfile(userId);
+              console.log(`User profile retrieved: ${userProfile?.displayName || 'N/A'}`);
+            } catch (profileError) {
+              console.warn('Could not get user profile:', profileError.message);
+            }
 
             // ========================================
             // 処方箋関連: メッセージングセッションチェック
@@ -378,7 +387,7 @@ async function defaultHandler(event, context) {
             }
 
             for (const action of actions) {
-              const result = await action({ context, parsedBody, userId, messageType, text });
+              const result = await action({ context, parsedBody, userId, messageType, text, userProfile });
               if (result) return result;
             }
           default:

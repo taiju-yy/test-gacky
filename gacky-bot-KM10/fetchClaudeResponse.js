@@ -20,7 +20,7 @@ function parseClaudeJSON(text) {
   return JSON.parse(cleanedText);
 }
 
-async function fetchClaudeResponse(conversationHistory, currentTime, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone) {
+async function fetchClaudeResponse(conversationHistory, currentTime, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName = null) {
   try {
     // 基本的なSYSTEM_CONTENTをDynamoDBから取得
     let baseSystemContent = await getSystemContent('base');
@@ -42,10 +42,27 @@ async function fetchClaudeResponse(conversationHistory, currentTime, messageType
     // 現在時刻情報をシステムプロンプトに追加
     const timeInfo = `現在：${currentTime}\n\n`;
     baseSystemContent = timeInfo + baseSystemContent;
+    
+    // ユーザーのdisplayNameがある場合、親しみを込めて名前を呼ぶようプロンプトに追加
+    let displayNamePrompt = '';
+    if (displayName) {
+      displayNamePrompt = `
+【重要：お話し相手の情報】
+今お話ししているお客様のお名前は「${displayName}」さんです。
+会話の中で自然に「${displayName}さん」と呼びかけてあげてください。
+- 毎回の返答で名前を呼ぶ必要はありません。会話の流れで自然なタイミングで使ってください
+- 名前を呼ぶことで、より親しみを感じていただけます
+- 初めての会話や久しぶりの会話では、挨拶と一緒に名前を呼んであげると喜ばれます
+- 例：「${displayName}さん、こんにちは！」「${displayName}さんって○○なんですね！」
+
+`;
+      console.log(`DisplayName prompt added for: ${displayName}`);
+    }
 
     // 各プロンプトを結合
     let updatedSystemContent = [
       baseSystemContent,              // 改善されたシステムプロンプト（禁止事項が冒頭）
+      displayNamePrompt,              // ユーザーの名前（親しみを込めて呼ぶため）
       responseToneSystemContent,      // 応答量設定
       politenessToneSystemContent,    // 言葉遣い設定（重要）
       attitudeToneSystemContent,      // 対応姿勢設定（重要）
