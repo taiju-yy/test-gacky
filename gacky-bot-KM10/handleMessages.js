@@ -4,7 +4,7 @@ const client = new line.messagingApi.MessagingApiClient(
   { channelAccessToken: process.env.ACCESSTOKEN }
 );
 // Claudeからの応答を取得する関数をインポート
-const { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem } = require('./fetchClaudeResponse');
+const { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem, determineNickname } = require('./fetchClaudeResponse');
 const {
   saveOrUpdateMessage,
   getMessages,
@@ -16,7 +16,8 @@ const {
   updateCoachingStyle,
   updatePolitenessTone,
   updateAttitudeTone,
-  updateUserActivitySummary
+  updateUserActivitySummary,
+  updateNickname
 } = require('./dynamoDBManager');
 const {
   prescriptionFlow,
@@ -472,11 +473,25 @@ function sanitizeResponse(responseText) {
 async function defaultAction(props) {
   const { context, parsedBody, userId, messageType, text, userProfile } = props;
   // 会話履歴の取得
-  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName, nickname } = await getMessages(userId);
   
   // displayName の決定（LINEプロフィールから取得した最新の名前、またはDBに保存されている名前）
   const currentDisplayName = userProfile?.displayName || displayName || null;
-  console.log(`Using displayName for conversation: ${currentDisplayName || 'N/A'}`);
+  
+  // nickname の決定と生成
+  // 1. DBに既に保存されている nickname があればそれを使用
+  // 2. なければ displayName から AI で生成して保存
+  let currentNickname = nickname;
+  if (!currentNickname && currentDisplayName) {
+    console.log(`No nickname found, generating from displayName: ${currentDisplayName}`);
+    currentNickname = await determineNickname(currentDisplayName);
+    if (currentNickname) {
+      // 生成した nickname を DB に保存
+      await updateNickname(userId, currentNickname);
+      console.log(`Nickname generated and saved: ${currentNickname}`);
+    }
+  }
+  console.log(`Using nickname for conversation: ${currentNickname || 'N/A'}`);
 
   // 新しいメッセージを履歴に追加
   messages = [...messages, ...(await prepareMessage(messageType, parsedBody))]
@@ -501,7 +516,7 @@ async function defaultAction(props) {
   if (!availableMessageTypes.includes(messageType)) {
     assistantMessage = "ごめんね。スタンプや動画はまだ分からないんだ。テキストでお話しよ！";
   } else {
-    assistantMessageObj = await fetchClaudeResponse(claudeMessages, currentJST, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, currentDisplayName);
+    assistantMessageObj = await fetchClaudeResponse(claudeMessages, currentJST, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, currentNickname);
     assistantMessage = pickAssistantMessage(parsedBody, messageType, assistantMessageObj);
 
     // 「あんた」を「あなた」に置換
@@ -651,10 +666,19 @@ async function showLuckyFoodFortuneAction(props) {
     const seasonalFoodsExample = getSeasonalFoodsExample(season);
     
     // ユーザー設定を取得
-    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName, nickname } = await getMessages(userId);
     
     // displayName の決定
     const currentDisplayName = userProfile?.displayName || displayName || null;
+    
+    // nickname の決定（なければ生成）
+    let currentNickname = nickname;
+    if (!currentNickname && currentDisplayName) {
+      currentNickname = await determineNickname(currentDisplayName);
+      if (currentNickname) {
+        await updateNickname(userId, currentNickname);
+      }
+    }
     
     // ラッキーフード占い用のシステムプロンプトを取得（改良版）
     let fortuneSystemPrompt = await getSystemContent('luckyFoodFortune');
@@ -678,7 +702,7 @@ async function showLuckyFoodFortuneAction(props) {
       content: `「ラッキーフード占い」をお願いします！
 
 今日は${month}月${day}日だよ。今の季節（${season}）にぴったりのラッキーフードを教えて！
-${currentDisplayName ? `（${currentDisplayName}さんへの占いだよ！名前を呼んであげてね）` : ''}
+${currentNickname ? `（${currentNickname}さんへの占いだよ！名前を呼んであげてね）` : ''}
 
 参考までに${season}の食材の例：${seasonalFoodsExample.join('、')} など
 （これ以外の${season}らしい食材でもOK！石川県の地元食材も大歓迎！）
@@ -851,10 +875,19 @@ async function startChatWithGackyAction(props) {
     const japaneseDayOfWeek = dayMapping[dayOfWeek];
     
     // ユーザー設定と履歴を取得
-    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName } = await getMessages(userId);
+    const { messages, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName, nickname } = await getMessages(userId);
     
     // displayName の決定
     const currentDisplayName = userProfile?.displayName || displayName || null;
+    
+    // nickname の決定（なければ生成）
+    let currentNickname = nickname;
+    if (!currentNickname && currentDisplayName) {
+      currentNickname = await determineNickname(currentDisplayName);
+      if (currentNickname) {
+        await updateNickname(userId, currentNickname);
+      }
+    }
     
     // 時間帯別のコンテキスト
     let timeContext = '';
@@ -877,7 +910,7 @@ async function startChatWithGackyAction(props) {
 
 現在：${currentTimeStr}（${japaneseDayOfWeek}）
 時間帯：${timeContext}
-${currentDisplayName ? `お客様のお名前：${currentDisplayName}さん（挨拶で呼びかけてあげてね！）` : ''}
+${currentNickname ? `お客様の呼び名：${currentNickname}さん（挨拶で呼びかけてあげてね！）` : ''}
 
 【今月の話題】
 - イベント：${monthlyContext.events}
@@ -892,7 +925,7 @@ ${monthlyContext.specific ? `- 特記事項：${monthlyContext.specific}` : ''}
     // 会話履歴（最近のもの少しだけ含める）
     const greetingMessages = messages.slice(-2).concat([greetingPrompt]);
     
-    // Claude APIで生成（displayNameも渡す）
+    // Claude APIで生成（nicknameを渡す）
     const assistantMessageObj = await fetchClaudeResponse(
       greetingMessages,
       currentTimeStr,
@@ -902,7 +935,7 @@ ${monthlyContext.specific ? `- 特記事項：${monthlyContext.specific}` : ''}
       coachingStyle || null,
       politenessTone || 'N',
       attitudeTone || null,
-      currentDisplayName
+      currentNickname
     );
     
     let greetingMessage = assistantMessageObj.commentFromGacky;

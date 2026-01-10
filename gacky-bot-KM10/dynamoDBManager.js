@@ -113,6 +113,7 @@ async function getMessages(userId) {
         politenessTone: data.Items[0].politenessTone,
         attitudeTone: data.Items[0].attitudeTone,
         displayName: data.Items[0].displayName,
+        nickname: data.Items[0].nickname,
       };
       // console.log('getMessages result:', JSON.stringify(result));
       return result;
@@ -127,7 +128,8 @@ async function getMessages(userId) {
         relationshipTone: null,
         politenessTone: null,
         attitudeTone: null,
-        displayName: null
+        displayName: null,
+        nickname: null
       };
     }
   } catch (error) {
@@ -345,6 +347,42 @@ async function updateDisplayName(userId, displayName) {
     return { success: true };
   } catch (error) {
     console.error('Error updating displayName:', error);
+    return { success: false, error: error.message };
+  }  
+}
+
+/**
+ * ユーザーのnicknameを更新する
+ * AIが判断した適切な呼び名を保存する
+ * @param {string} userId - LINEユーザーID
+ * @param {string} nickname - AIが判断した呼び名（例：「太樹」「佳奈子」）
+ */
+async function updateNickname(userId, nickname) {
+  try {
+    const { timestamp } = await getMessages(userId);
+    
+    if (!timestamp) {
+      console.log(`No existing conversation for user ${userId}, nickname will be set on first message`);
+      return { success: true, newUser: true };
+    }
+    
+    const params = {
+      TableName: table,
+      Key: {
+        userId: userId,
+        timestamp: timestamp
+      },
+      UpdateExpression: "SET nickname = :nickname",
+      ExpressionAttributeValues: {
+        ":nickname": nickname
+      },
+    }
+    
+    await dynamoDB.send(new UpdateCommand(params));
+    console.log(`Nickname updated for user ${userId}: ${nickname}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating nickname:', error);
     return { success: false, error: error.message };
   }  
 }
@@ -1228,6 +1266,7 @@ module.exports = {
   updateCoachingStyle,
   updateAttitudeTone,
   updateDisplayName,
+  updateNickname,
   backupToS3,
   truncateMessage,
   // Broadcast Logs

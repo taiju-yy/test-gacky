@@ -4,6 +4,60 @@ const { getSystemContent } = require('./dynamoDBManager');
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const anthropic = new Anthropic({ apiKey });
 
+/**
+ * LINE displayName から適切な呼び名（nickname）を判断する
+ * 
+ * 例:
+ * - "Taiju Suzuki / 鈴木太樹" → "太樹"
+ * - "西垣佳奈子" → "佳奈子"
+ * - "kanako" → "kanako"
+ * - "Mike@Tokyo" → "Mike"
+ * - "ゆうこりん" → "ゆうこりん"
+ * 
+ * @param {string} displayName - LINE の表示名
+ * @returns {Promise<string>} - 適切な呼び名
+ */
+async function determineNickname(displayName) {
+  if (!displayName) return null;
+  
+  try {
+    const model = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+    
+    const response = await anthropic.messages.create({
+      max_tokens: 100,
+      model: model,
+      system: `あなたはLINEの表示名から、友達として呼びかけるのに最適な呼び名を判断するアシスタントです。
+
+以下のルールで呼び名を決定してください：
+1. 日本人名（漢字/ひらがな）の場合：下の名前（ファーストネーム）を使う
+   - 例: "鈴木太樹" → "太樹"、"西垣佳奈子" → "佳奈子"
+2. 英語名/ローマ字名の場合：ファーストネームを使う
+   - 例: "Taiju Suzuki" → "Taiju"、"Mike Johnson" → "Mike"
+3. 日英併記の場合：日本語の下の名前を優先
+   - 例: "Taiju Suzuki / 鈴木太樹" → "太樹"
+4. ニックネーム風の場合：そのまま使う
+   - 例: "ゆうこりん" → "ゆうこりん"、"たっくん" → "たっくん"
+5. 記号や@以降は無視する
+   - 例: "Mike@Tokyo" → "Mike"
+6. 絵文字は除去する
+
+呼び名のみを返してください。説明は不要です。`,
+      messages: [{
+        role: 'user',
+        content: `この表示名から適切な呼び名を判断してください: "${displayName}"`
+      }]
+    });
+    
+    const nickname = response.content[0].text.trim();
+    console.log(`Nickname determined: "${displayName}" → "${nickname}"`);
+    return nickname;
+  } catch (error) {
+    console.error('Error determining nickname:', error);
+    // エラー時はdisplayNameをそのまま返す
+    return displayName;
+  }
+}
+
 // JSONパース用のヘルパー関数
 function parseClaudeJSON(text) {
   // マークダウンコードブロックを除去
@@ -20,7 +74,7 @@ function parseClaudeJSON(text) {
   return JSON.parse(cleanedText);
 }
 
-async function fetchClaudeResponse(conversationHistory, currentTime, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName = null) {
+async function fetchClaudeResponse(conversationHistory, currentTime, messageType, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, nickname = null) {
   try {
     // 基本的なSYSTEM_CONTENTをDynamoDBから取得
     let baseSystemContent = await getSystemContent('base');
@@ -43,26 +97,26 @@ async function fetchClaudeResponse(conversationHistory, currentTime, messageType
     const timeInfo = `現在：${currentTime}\n\n`;
     baseSystemContent = timeInfo + baseSystemContent;
     
-    // ユーザーのdisplayNameがある場合、親しみを込めて名前を呼ぶようプロンプトに追加
-    let displayNamePrompt = '';
-    if (displayName) {
-      displayNamePrompt = `
+    // ユーザーの呼び名（nickname）がある場合、親しみを込めて名前を呼ぶようプロンプトに追加
+    let nicknamePrompt = '';
+    if (nickname) {
+      nicknamePrompt = `
 【重要：お話し相手の情報】
-今お話ししているお客様のお名前は「${displayName}」さんです。
-会話の中で自然に「${displayName}さん」と呼びかけてあげてください。
+今お話ししているお客様の呼び名は「${nickname}」さんです。
+会話の中で自然に「${nickname}さん」と呼びかけてあげてください。
 - 毎回の返答で名前を呼ぶ必要はありません。会話の流れで自然なタイミングで使ってください
 - 名前を呼ぶことで、より親しみを感じていただけます
 - 初めての会話や久しぶりの会話では、挨拶と一緒に名前を呼んであげると喜ばれます
-- 例：「${displayName}さん、こんにちは！」「${displayName}さんって○○なんですね！」
+- 例：「${nickname}さん、こんにちは！」「${nickname}さんって○○なんですね！」
 
 `;
-      console.log(`DisplayName prompt added for: ${displayName}`);
+      console.log(`Nickname prompt added for: ${nickname}`);
     }
 
     // 各プロンプトを結合
     let updatedSystemContent = [
       baseSystemContent,              // 改善されたシステムプロンプト（禁止事項が冒頭）
-      displayNamePrompt,              // ユーザーの名前（親しみを込めて呼ぶため）
+      nicknamePrompt,                 // ユーザーの呼び名（親しみを込めて呼ぶため）
       responseToneSystemContent,      // 応答量設定
       politenessToneSystemContent,    // 言葉遣い設定（重要）
       attitudeToneSystemContent,      // 対応姿勢設定（重要）
@@ -227,4 +281,4 @@ async function isPrescriptionFlowRelated(conversationHistory) {
   }
 }
 
-module.exports = { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem, isPrescriptionFlowRelated };
+module.exports = { fetchClaudeResponse, fetchClaudeResponseWithCustomSystem, isPrescriptionFlowRelated, determineNickname };
