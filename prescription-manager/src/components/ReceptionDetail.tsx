@@ -21,7 +21,7 @@ interface ReceptionDetailProps {
   onStoreAssign: (receptionId: string, storeId: string) => void;
   onSendMessage: (receptionId: string, message: string) => Promise<void>;
   onReactivateSession?: (receptionId: string) => Promise<void>;
-  onStartVideoCall?: (receptionId: string) => Promise<void>;
+  onStartVideoCall?: (receptionId: string) => Promise<string | null>;
   onClose: () => void;
 }
 
