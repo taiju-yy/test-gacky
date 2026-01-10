@@ -21,7 +21,7 @@ interface ReceptionDetailProps {
   onStoreAssign: (receptionId: string, storeId: string) => void;
   onSendMessage: (receptionId: string, message: string) => Promise<void>;
   onReactivateSession?: (receptionId: string) => Promise<void>;
-  onStartVideoCall?: (receptionId: string) => Promise<string | null>;
+  onStartVideoCall?: (receptionId: string) => Promise<string | null>; // ビデオ通話を開始し、ルームURLを返す
   onClose: () => void;
 }
 
@@ -58,6 +58,7 @@ export default function ReceptionDetail({
   const [staffNote, setStaffNote] = useState(reception.staffNote || '');
   const [activeTab, setActiveTab] = useState<'info' | 'message'>('info');
   const [isReactivating, setIsReactivating] = useState(false);
+  const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
 
   // セッションがタイムアウトしているかどうか判定
   const isSessionTimedOut = reception.messagingSessionStatus === 'closed' && 
@@ -75,6 +76,21 @@ export default function ReceptionDetail({
       await onReactivateSession(reception.receptionId);
     } finally {
       setIsReactivating(false);
+    }
+  };
+
+  // ビデオ通話開始ハンドラ
+  const handleStartVideoCall = async () => {
+    if (!onStartVideoCall) return;
+    setIsStartingVideoCall(true);
+    try {
+      const storeVideoCallUrl = await onStartVideoCall(reception.receptionId);
+      if (storeVideoCallUrl) {
+        // 新しいウィンドウでビデオ通話画面を開く
+        window.open(storeVideoCallUrl, '_blank', 'width=800,height=600');
+      }
+    } finally {
+      setIsStartingVideoCall(false);
     }
   };
 
@@ -381,9 +397,10 @@ export default function ReceptionDetail({
               </div>
             </div>
 
-            {/* クイックメッセージボタン */}
+            {/* クイックアクションボタン */}
             {reception.status !== 'completed' && reception.status !== 'cancelled' ? (
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
+                {/* メッセージボタン */}
                 <button
                   onClick={() => setActiveTab('message')}
                   className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gacky-green text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
@@ -398,11 +415,51 @@ export default function ReceptionDetail({
                     </span>
                   )}
                 </button>
+                
+                {/* ビデオ通話ボタン */}
+                {onStartVideoCall && (
+                  <button
+                    onClick={handleStartVideoCall}
+                    disabled={isStartingVideoCall}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isStartingVideoCall ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>通話を開始中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span>お客様とビデオ通話する</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                
+                {/* オンライン服薬指導の説明 */}
+                {onStartVideoCall && (
+                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                    <p className="text-xs text-blue-700">
+                      <span className="font-medium">ビデオ通話について:</span>
+                    </p>
+                    <ul className="mt-1 text-xs text-blue-600 space-y-1">
+                      <li>• お客様のLINEに通話リンクが送信されます</li>
+                      <li>• オンライン服薬指導に使用できます</li>
+                      <li>• 通話にはカメラとマイクの許可が必要です</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="pt-2 p-3 bg-gray-100 rounded-lg text-center">
                 <p className="text-sm text-gray-500">
-                  {reception.status === 'completed' ? '受取完了' : 'キャンセル'}済みのため、メッセージは送信できません
+                  {reception.status === 'completed' ? '受取完了' : 'キャンセル'}済みのため、メッセージ・通話は利用できません
                 </p>
               </div>
             )}
