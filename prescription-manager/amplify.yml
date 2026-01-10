@@ -16,6 +16,7 @@ applications:
             - echo "TABLE_CUSTOMER_SESSIONS=$TABLE_CUSTOMER_SESSIONS" >> .env.production
             - echo "TABLE_STORES=$TABLE_STORES" >> .env.production
             - echo "TABLE_CUSTOMER_PROFILES=$TABLE_CUSTOMER_PROFILES" >> .env.production
+            - echo "PRESCRIPTION_BUCKET=$PRESCRIPTION_BUCKET" >> .env.production
             # ビルド実行
             - npm run build
       artifacts:
