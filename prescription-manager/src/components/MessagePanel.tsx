@@ -11,6 +11,7 @@ interface MessagePanelProps {
   isEmbedded?: boolean; // インライン表示モード
   readOnly?: boolean; // メッセージ送信を無効化（キャンセル・完了時）
   readOnlyReason?: string; // 無効化の理由
+  messagingSessionStatus?: 'active' | 'waiting' | 'closed' | 'inactive' | null; // セッションステータス
 }
 
 export default function MessagePanel({
@@ -21,6 +22,7 @@ export default function MessagePanel({
   isEmbedded = false,
   readOnly = false,
   readOnlyReason = '',
+  messagingSessionStatus = null,
 }: MessagePanelProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -103,9 +105,21 @@ export default function MessagePanel({
             </svg>
             <h3 className="font-medium text-gray-900 text-sm">{customerName}様とのやりとり</h3>
           </div>
-          <span className="text-xs text-gray-500 bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-            AI応答停止中
-          </span>
+          {messagingSessionStatus === 'active' && (
+            <span className="text-xs text-gray-500 bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
+              AI応答停止中
+            </span>
+          )}
+          {(messagingSessionStatus === 'closed' || messagingSessionStatus === 'inactive' || !messagingSessionStatus) && (
+            <span className="text-xs text-gray-500 bg-green-100 text-green-700 px-2 py-1 rounded">
+              AI応答中
+            </span>
+          )}
+          {messagingSessionStatus === 'waiting' && (
+            <span className="text-xs text-gray-500 bg-blue-100 text-blue-700 px-2 py-1 rounded">
+              店舗応答待ち
+            </span>
+          )}
         </div>
       </div>
 
