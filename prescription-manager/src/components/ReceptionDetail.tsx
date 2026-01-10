@@ -21,6 +21,7 @@ interface ReceptionDetailProps {
   onStoreAssign: (receptionId: string, storeId: string) => void;
   onSendMessage: (receptionId: string, message: string) => Promise<void>;
   onReactivateSession?: (receptionId: string) => Promise<void>;
+  onStartVideoCall?: (receptionId: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -50,6 +51,7 @@ export default function ReceptionDetail({
   onStoreAssign,
   onSendMessage,
   onReactivateSession,
+  onStartVideoCall,
   onClose,
 }: ReceptionDetailProps) {
   const [selectedStoreId, setSelectedStoreId] = useState(reception.selectedStoreId || '');
