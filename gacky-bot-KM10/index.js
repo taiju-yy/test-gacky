@@ -92,7 +92,8 @@ const {
   getUserActivityHistory,
   getRecentBroadcastLogs,
   getBroadcastSummary,
-  getEngagementRate
+  getEngagementRate,
+  getResponseRate
 } = require('./dynamoDBManager');
 
 // 処方箋管理モジュール
@@ -614,6 +615,20 @@ async function analyticsHandler(event) {
         };
       }
 
+      case 'getResponseRate': {
+        // 応答率（配信後24時間以内の反応率）取得
+        const { startDate, endDate, days } = event;
+        const result = await getResponseRate({ startDate, endDate, days: days || 7 });
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            action: 'getResponseRate',
+            ...result
+          }, null, 2)
+        };
+      }
+
       default:
         return {
           statusCode: 400,
@@ -624,7 +639,8 @@ async function analyticsHandler(event) {
               'getUserActivityHistory',
               'getRecentBroadcastLogs',
               'getBroadcastSummary',
-              'getEngagementRate'
+              'getEngagementRate',
+              'getResponseRate'
             ],
             examples: {
               getMonthlyActiveUsers: {
@@ -654,6 +670,13 @@ async function analyticsHandler(event) {
                 action: 'getEngagementRate',
                 yearMonth: '2025-12',
                 threshold: 3
+              },
+              getResponseRate: {
+                handler: 'analyticsHandler',
+                action: 'getResponseRate',
+                days: 7,
+                startDate: '2025-12-22',
+                endDate: '2025-12-31'
               }
             }
           }, null, 2)

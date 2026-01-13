@@ -114,6 +114,10 @@ async function getMessages(userId) {
         attitudeTone: data.Items[0].attitudeTone,
         displayName: data.Items[0].displayName,
         nickname: data.Items[0].nickname,
+        // 応答率計算用フィールド
+        lastBroadcastId: data.Items[0].lastBroadcastId,
+        lastBroadcastAt: data.Items[0].lastBroadcastAt,
+        respondedToBroadcast: data.Items[0].respondedToBroadcast,
       };
       // console.log('getMessages result:', JSON.stringify(result));
       return result;
@@ -129,7 +133,11 @@ async function getMessages(userId) {
         politenessTone: null,
         attitudeTone: null,
         displayName: null,
-        nickname: null
+        nickname: null,
+        // 応答率計算用フィールド
+        lastBroadcastId: null,
+        lastBroadcastAt: null,
+        respondedToBroadcast: null,
       };
     }
   } catch (error) {
@@ -652,27 +660,31 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
       if (timestamp) {
         // 既存レコードの更新（条件付き）
         // 重要な変更: lastInteractionDateを更新しない
+        // 応答率計算用: lastBroadcastAt を記録、respondedToBroadcast を false にリセット
         const params = {
           TableName: table,
           Key: {
             userId: userId,
             timestamp: timestamp
           },
-          UpdateExpression: 'SET messages = :messages, lastBroadcastId = :broadcastId',
+          UpdateExpression: 'SET messages = :messages, lastBroadcastId = :broadcastId, lastBroadcastAt = :broadcastAt, respondedToBroadcast = :responded',
           ConditionExpression: 'attribute_exists(userId) AND attribute_exists(#ts)',
           ExpressionAttributeNames: {
             '#ts': 'timestamp'
           },
           ExpressionAttributeValues: removeUndefined({
             ':messages': newMessages,
-            ':broadcastId': messageId
+            ':broadcastId': messageId,
+            ':broadcastAt': newTimestamp,
+            ':responded': false
           })
         };
         
         await dynamoDB.send(new UpdateCommand(params));
-        console.log(`ユーザー ${userId} の既存会話を更新しました（lastInteractionDateは更新しません）`);
+        console.log(`ユーザー ${userId} の既存会話を更新しました（lastBroadcastAt: ${newTimestamp}）`);
       } else {
         // 新しい会話の作成
+        // 応答率計算用: lastBroadcastAt を記録、respondedToBroadcast を false に設定
         const params = {
           TableName: table,
           Item: removeUndefined({
@@ -681,6 +693,8 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
             messages: newMessages,
             lastInteractionDate: lastInteractionDate || newTimestamp, // 既存の値があれば維持、なければ初期値として設定
             lastBroadcastId: messageId,
+            lastBroadcastAt: newTimestamp,
+            respondedToBroadcast: false,
             responseTone: null,
             coachingStyle: null,
             relationshipTone: null,
@@ -693,7 +707,7 @@ async function addBroadcastConversation(userId, messages, broadcastId = null) {
         };
         
         await dynamoDB.send(new PutCommand(params));
-        console.log(`ユーザー ${userId} の新しい会話を作成しました`);
+        console.log(`ユーザー ${userId} の新しい会話を作成しました（lastBroadcastAt: ${newTimestamp}）`);
       }
       
       return { status: 'success', timestamp: timestamp || newTimestamp };
@@ -1250,6 +1264,173 @@ async function getEngagementRate(yearMonth, threshold = 3) {
   }
 }
 
+// ========================================
+// 応答率（Response Rate）関連関数
+// ========================================
+
+/**
+ * ブロードキャスト配信への反応を記録
+ * ユーザーがメッセージを送信した時に呼び出し、
+ * 最後の配信から24時間以内なら反応としてカウント
+ * @param {string} userId - ユーザーID
+ * @param {string} timestamp - レコードのタイムスタンプ
+ * @param {string} lastBroadcastAt - 最後の配信時刻
+ * @param {boolean} respondedToBroadcast - 既に反応済みかどうか
+ * @param {number} responseWindowHours - 反応とみなす時間枠（デフォルト: 24時間）
+ * @returns {Object} 更新結果
+ */
+async function checkAndRecordBroadcastResponse(userId, timestamp, lastBroadcastAt, respondedToBroadcast, responseWindowHours = 24) {
+  try {
+    // 既に反応済み、または配信を受けていない場合はスキップ
+    if (respondedToBroadcast || !lastBroadcastAt) {
+      return { recorded: false, reason: respondedToBroadcast ? 'already_responded' : 'no_broadcast' };
+    }
+
+    const now = new Date();
+    const broadcastTime = new Date(lastBroadcastAt);
+    const hoursSinceBroadcast = (now - broadcastTime) / (1000 * 60 * 60);
+
+    // 24時間（または指定時間）以内の場合のみ反応として記録
+    if (hoursSinceBroadcast <= responseWindowHours) {
+      const params = {
+        TableName: table,
+        Key: {
+          userId: userId,
+          timestamp: timestamp
+        },
+        UpdateExpression: 'SET respondedToBroadcast = :responded, respondedAt = :respondedAt',
+        ExpressionAttributeValues: {
+          ':responded': true,
+          ':respondedAt': now.toISOString()
+        }
+      };
+
+      await dynamoDB.send(new UpdateCommand(params));
+      console.log(`ユーザー ${userId} のブロードキャスト反応を記録しました（配信から ${hoursSinceBroadcast.toFixed(1)} 時間後）`);
+      
+      return { 
+        recorded: true, 
+        hoursSinceBroadcast: Math.round(hoursSinceBroadcast * 10) / 10,
+        lastBroadcastAt 
+      };
+    }
+
+    return { 
+      recorded: false, 
+      reason: 'outside_response_window',
+      hoursSinceBroadcast: Math.round(hoursSinceBroadcast * 10) / 10 
+    };
+  } catch (error) {
+    console.error('Error recording broadcast response:', error);
+    return { recorded: false, error: error.message };
+  }
+}
+
+/**
+ * 応答率を取得
+ * 指定期間内の配信に対するユーザー反応率を計算
+ * @param {Object} options - オプション
+ * @param {string} options.startDate - 開始日（例: "2025-12-22"）
+ * @param {string} options.endDate - 終了日（例: "2025-12-31"）
+ * @param {number} options.days - 過去N日間（startDate/endDateの代わりに使用可能）
+ * @returns {Object} 応答率データ
+ */
+async function getResponseRate(options = {}) {
+  try {
+    const { startDate, endDate, days = 7 } = options;
+    
+    // 日付範囲を決定
+    let start, end;
+    if (startDate && endDate) {
+      start = new Date(startDate);
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+    } else {
+      end = new Date();
+      start = new Date();
+      start.setDate(start.getDate() - days);
+    }
+
+    // 全ユーザーのデータをスキャン
+    const params = {
+      TableName: table,
+      FilterExpression: 'attribute_exists(lastBroadcastAt)',
+      ProjectionExpression: 'userId, lastBroadcastAt, respondedToBroadcast, respondedAt, lastBroadcastId'
+    };
+
+    const data = await dynamoDB.send(new ScanCommand(params));
+    const items = data.Items || [];
+
+    // 指定期間内の配信を受けたユーザーをフィルタ
+    const usersInPeriod = items.filter(item => {
+      const broadcastTime = new Date(item.lastBroadcastAt);
+      return broadcastTime >= start && broadcastTime <= end;
+    });
+
+    const totalBroadcastRecipients = usersInPeriod.length;
+    const respondedUsers = usersInPeriod.filter(item => item.respondedToBroadcast === true);
+    const responseCount = respondedUsers.length;
+    const responseRate = totalBroadcastRecipients > 0 
+      ? Math.round((responseCount / totalBroadcastRecipients) * 10000) / 100 
+      : 0;
+
+    // 配信IDごとの反応率を計算
+    const broadcastStats = {};
+    usersInPeriod.forEach(item => {
+      const broadcastId = item.lastBroadcastId || 'unknown';
+      if (!broadcastStats[broadcastId]) {
+        broadcastStats[broadcastId] = {
+          broadcastId,
+          broadcastAt: item.lastBroadcastAt,
+          totalRecipients: 0,
+          respondedCount: 0
+        };
+      }
+      broadcastStats[broadcastId].totalRecipients++;
+      if (item.respondedToBroadcast) {
+        broadcastStats[broadcastId].respondedCount++;
+      }
+    });
+
+    // 配信ごとの応答率を計算
+    const broadcastResponseRates = Object.values(broadcastStats)
+      .map(stat => ({
+        ...stat,
+        responseRate: stat.totalRecipients > 0 
+          ? Math.round((stat.respondedCount / stat.totalRecipients) * 10000) / 100 
+          : 0
+      }))
+      .sort((a, b) => new Date(b.broadcastAt) - new Date(a.broadcastAt));
+
+    return {
+      period: {
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0]
+      },
+      totalBroadcastRecipients,
+      responseCount,
+      responseRate,
+      broadcastResponseRates,
+      respondedUsers: respondedUsers.map(item => ({
+        userId: item.userId,
+        lastBroadcastAt: item.lastBroadcastAt,
+        respondedAt: item.respondedAt
+      }))
+    };
+  } catch (error) {
+    console.error('Error getting response rate:', error);
+    return {
+      period: {},
+      totalBroadcastRecipients: 0,
+      responseCount: 0,
+      responseRate: 0,
+      broadcastResponseRates: [],
+      respondedUsers: [],
+      error: error.message
+    };
+  }
+}
+
 // 外部からの利用を可能にするために関数をエクスポート
 module.exports = {
   saveOrUpdateMessage,
@@ -1281,5 +1462,8 @@ module.exports = {
   getUserActivityHistory,
   // Analytics (Enhanced)
   getBroadcastSummary,
-  getEngagementRate
+  getEngagementRate,
+  // Response Rate
+  checkAndRecordBroadcastResponse,
+  getResponseRate
 };
