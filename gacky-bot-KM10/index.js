@@ -48,8 +48,17 @@ const {
   showLuckyFoodFortuneAction,
   startChatWithGackyAction,
   showPrescriptionGuideAction,
-  keywordPrescription
+  keywordPrescription,
+  // 新しい処方箋フロー用
+  handlePrescriptionFlowPostback,
+  handlePrescriptionFlowLocation,
+  handlePrescriptionFlowAddressInput,
+  handleCustomPickupTimeInput,
+  FLOW_STEPS,
+  POSTBACK_PREFIX,
 } = require('./handleMessages');
+
+const { getFlowState } = require('./prescriptionFlowManager');
 
 // Error sticker
 const errorSticker = {
@@ -149,6 +158,16 @@ async function defaultHandler(event, context) {
 
         switch (eventType) {
           case "postback":
+            // 処方箋フロー関連のpostbackをチェック
+            const postbackData = eventObj.postback.data;
+            if (postbackData.startsWith('rx_')) {
+              // 処方箋フロー用のpostback
+              const result = await handlePrescriptionFlowPostback({ context, parsedBody, userId }, postbackData);
+              if (result) {
+                return result;
+              }
+            }
+            // 既存のpostback処理
             await handlePostbackAction({ context, parsedBody, userId });
             break;
 
@@ -257,16 +276,20 @@ async function defaultHandler(event, context) {
                     console.warn('Could not get user profile:', profileError.message);
                   }
 
-                  // 処方箋として保存
-                  const result = await handlePrescriptionImage(userId, userProfile, imageBuffer, messageId);
+                  // フロー状態を取得
+                  const flowState = await getFlowState(userId);
+                  console.log(`Processing prescription with flow state:`, flowState);
+
+                  // 処方箋として保存（フロー状態を渡す）
+                  const result = await handlePrescriptionImage(userId, userProfile, imageBuffer, messageId, flowState);
 
                   if (result.success) {
                     // 「待機中」セッションを開始（店舗からの連絡待ち）
                     await startWaitingSession(userId, result.receptionId);
 
-                    // 受付確認メッセージを送信
+                    // 受付確認メッセージを送信（フロー状態を渡す）
                     const replyToken = parsedBody.events[0].replyToken;
-                    const confirmMessage = generateReceptionConfirmMessage(result.receptionId);
+                    const confirmMessage = generateReceptionConfirmMessage(result.receptionId, flowState);
                     await client.replyMessage({
                       replyToken,
                       messages: [confirmMessage]
@@ -298,6 +321,39 @@ async function defaultHandler(event, context) {
                 }
               }
               // 処方箋モードでない場合は通常のAI応答へ
+            }
+
+            // ========================================
+            // 処方箋フロー: 位置情報の処理
+            // ========================================
+            if (messageType === 'location') {
+              const flowState = await getFlowState(userId);
+              if (flowState.step === FLOW_STEPS.WAITING_LOCATION) {
+                const latitude = parsedBody.events[0].message.latitude;
+                const longitude = parsedBody.events[0].message.longitude;
+                const result = await handlePrescriptionFlowLocation({ context, parsedBody, userId }, latitude, longitude);
+                if (result) {
+                  return result;
+                }
+              }
+            }
+
+            // ========================================
+            // 処方箋フロー: 住所入力またはカスタム日時入力の処理
+            // ========================================
+            if (messageType === 'text') {
+              const flowState = await getFlowState(userId);
+              if (flowState.step === FLOW_STEPS.WAITING_ADDRESS) {
+                const result = await handlePrescriptionFlowAddressInput({ context, parsedBody, userId }, text);
+                if (result) {
+                  return result;
+                }
+              } else if (flowState.step === FLOW_STEPS.INPUT_PICKUP_TIME && flowState.pickupTime === 'custom') {
+                const result = await handleCustomPickupTimeInput({ context, parsedBody, userId }, text);
+                if (result) {
+                  return result;
+                }
+              }
             }
 
             // ========================================

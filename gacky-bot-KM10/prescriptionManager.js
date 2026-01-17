@@ -43,8 +43,14 @@ const getTTL = () => Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
 
 /**
  * 処方箋画像を受信して処理
+ * 
+ * @param {string} userId - LINEユーザーID
+ * @param {Object} userProfile - ユーザープロフィール
+ * @param {Buffer} imageContent - 画像コンテンツ
+ * @param {string} messageId - メッセージID
+ * @param {Object} flowState - フロー状態（オプション）
  */
-async function handlePrescriptionImage(userId, userProfile, imageContent, messageId) {
+async function handlePrescriptionImage(userId, userProfile, imageContent, messageId, flowState = null) {
   try {
     console.log(`Processing prescription image from user: ${userId}`);
 
@@ -71,6 +77,20 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
       { expiresIn: 7 * 24 * 60 * 60 } // 7日間有効
     );
 
+    // フロー状態から情報を取得
+    const deliveryMethod = flowState?.deliveryMethod || 'store'; // デフォルトは店舗受け取り
+    const selectedStoreId = flowState?.selectedStoreId || null;
+    const preferredPickupTime = flowState?.pickupTime || null;
+    const preferredPickupTimeText = flowState?.pickupTimeText || null;
+
+    // 店舗名を取得
+    let selectedStoreName = null;
+    if (selectedStoreId) {
+      const { getStoreById } = require('./storeList');
+      const store = getStoreById(selectedStoreId);
+      selectedStoreName = store ? store.storeName : null;
+    }
+
     // DynamoDBに受付を作成
     const receptionItem = {
       receptionId,
@@ -82,10 +102,15 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
       prescriptionImageKey: s3Key,
       status: 'pending',
       messagingSessionStatus: 'inactive',
+      // 受け取り方法
+      deliveryMethod,
+      preferredPickupTime,
+      preferredPickupTimeText,
+      // 店舗情報
+      selectedStoreId,
+      selectedStoreName,
       customerNote: null,
       staffNote: null,
-      selectedStoreId: null,
-      selectedStoreName: null,
       createdAt: timestamp,
       ttl: getTTL(),
     };
@@ -96,9 +121,9 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
     }));
 
     // お客様プロフィールを更新（将来の履歴統合表示用）
-    await updateCustomerProfile(userId, userProfile, null, null);
+    await updateCustomerProfile(userId, userProfile, selectedStoreId, selectedStoreName);
 
-    console.log(`Prescription reception created: ${receptionId}`);
+    console.log(`Prescription reception created: ${receptionId}, deliveryMethod: ${deliveryMethod}, store: ${selectedStoreName || 'N/A'}`);
 
     return {
       success: true,
@@ -801,8 +826,128 @@ async function reactivateMessagingSession(userId, receptionId) {
 
 /**
  * 処方箋受付確認メッセージを生成
+ * 
+ * @param {string} receptionId - 受付ID
+ * @param {Object} flowState - フロー状態（オプション）
  */
-function generateReceptionConfirmMessage(receptionId) {
+function generateReceptionConfirmMessage(receptionId, flowState = null) {
+  const deliveryMethod = flowState?.deliveryMethod || 'store';
+  const selectedStoreName = flowState?.selectedStoreId ? 
+    (require('./storeList').getStoreById(flowState.selectedStoreId)?.storeName || null) : null;
+  const pickupTimeText = flowState?.pickupTimeText || null;
+
+  // 基本のボディコンテンツ
+  const bodyContents = [
+    {
+      type: 'text',
+      text: '処方箋を受け付けました',
+      weight: 'bold',
+      size: 'lg',
+      align: 'center',
+    },
+    {
+      type: 'text',
+      text: `受付番号: ${receptionId.slice(-8)}`,
+      size: 'sm',
+      color: '#666666',
+      align: 'center',
+      margin: 'md',
+    },
+    {
+      type: 'separator',
+      margin: 'lg',
+    },
+  ];
+
+  // 受け取り方法に応じた情報を追加
+  if (deliveryMethod === 'home') {
+    bodyContents.push({
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '🏠 受け取り方法',
+          size: 'xs',
+          color: '#888888',
+        },
+        {
+          type: 'text',
+          text: '自宅受け取り（オンライン服薬指導）',
+          size: 'sm',
+          weight: 'bold',
+          margin: 'xs',
+        },
+      ],
+      margin: 'lg',
+    });
+    bodyContents.push({
+      type: 'text',
+      text: 'オンライン服薬指導のご案内は\n担当者からご連絡いたします。',
+      size: 'sm',
+      color: '#666666',
+      wrap: true,
+      margin: 'md',
+    });
+  } else {
+    if (selectedStoreName) {
+      bodyContents.push({
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '🏪 受取店舗',
+            size: 'xs',
+            color: '#888888',
+          },
+          {
+            type: 'text',
+            text: `あおぞら薬局 ${selectedStoreName}`,
+            size: 'sm',
+            weight: 'bold',
+            margin: 'xs',
+          },
+        ],
+        margin: 'lg',
+      });
+    }
+    
+    if (pickupTimeText) {
+      bodyContents.push({
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '⏰ 希望受け取り日時',
+            size: 'xs',
+            color: '#888888',
+          },
+          {
+            type: 'text',
+            text: pickupTimeText,
+            size: 'sm',
+            weight: 'bold',
+            margin: 'xs',
+          },
+        ],
+        margin: 'md',
+      });
+    }
+    
+    bodyContents.push({
+      type: 'text',
+      text: selectedStoreName 
+        ? 'お薬の準備ができ次第ご連絡いたします。\n希望日時に間に合わない場合は\n店舗からお電話いたします。'
+        : '管理者が確認後、店舗に連絡します。\n準備ができ次第ご連絡いたします。',
+      size: 'sm',
+      color: '#666666',
+      wrap: true,
+      margin: 'lg',
+    });
+  }
+
   return {
     type: 'flex',
     altText: '処方箋を受け付けました',
@@ -825,35 +970,7 @@ function generateReceptionConfirmMessage(receptionId) {
       body: {
         type: 'box',
         layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '処方箋を受け付けました',
-            weight: 'bold',
-            size: 'lg',
-            align: 'center',
-          },
-          {
-            type: 'text',
-            text: `受付番号: ${receptionId.slice(-8)}`,
-            size: 'sm',
-            color: '#666666',
-            align: 'center',
-            margin: 'md',
-          },
-          {
-            type: 'separator',
-            margin: 'lg',
-          },
-          {
-            type: 'text',
-            text: '管理者が確認後、店舗に連絡します。\n準備ができ次第ご連絡いたします。',
-            size: 'sm',
-            color: '#666666',
-            wrap: true,
-            margin: 'lg',
-          },
-        ],
+        contents: bodyContents,
         paddingAll: '20px',
       },
       footer: {

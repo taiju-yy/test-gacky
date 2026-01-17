@@ -11,6 +11,11 @@ export type ReceptionStatus =
   | 'completed'    // 受取完了
   | 'cancelled';   // キャンセル
 
+// 受け取り方法
+export type DeliveryMethod = 
+  | 'store'        // 店舗受け取り
+  | 'home';        // 自宅受け取り（オンライン服薬指導）
+
 // メッセージングセッションのステータス
 export type MessagingSessionStatus = 
   | 'inactive'     // 店舗とのやりとりなし（AI応答有効）
@@ -49,6 +54,11 @@ export interface PrescriptionReception {
   prescriptionImageUrl: string;  // 処方箋画像URL（S3）
   prescriptionImageKey: string;  // S3キー
   ocrResult?: string;            // OCR結果（参考情報）
+  
+  // 受け取り方法
+  deliveryMethod?: DeliveryMethod;     // 受け取り方法（店舗 or 自宅）
+  preferredPickupTime?: string;        // 希望受け取り時間
+  preferredPickupTimeText?: string;    // 希望受け取り時間（表示用テキスト）
   
   // 店舗情報
   selectedStoreId?: string;      // 選択された店舗ID
