@@ -62,7 +62,10 @@ export default function ReceptionDetail({
   onDeliveryMethodChange,
   onClose,
 }: ReceptionDetailProps) {
-  const [selectedStoreId, setSelectedStoreId] = useState(reception.selectedStoreId || '');
+  // 店舗IDの初期値: 管理者が割り当てた店舗 > お客様が選択した店舗 > 空
+  const [selectedStoreId, setSelectedStoreId] = useState(
+    reception.selectedStoreId || reception.preferredStoreId || ''
+  );
   const [staffNote, setStaffNote] = useState(reception.staffNote || '');
   const [activeTab, setActiveTab] = useState<'info' | 'message'>('info');
   const [isReactivating, setIsReactivating] = useState(false);
@@ -119,9 +122,10 @@ export default function ReceptionDetail({
 
   // reception変更時にstateを更新
   useEffect(() => {
-    setSelectedStoreId(reception.selectedStoreId || '');
+    // 店舗ID: 管理者が割り当てた店舗 > お客様が選択した店舗 > 空
+    setSelectedStoreId(reception.selectedStoreId || reception.preferredStoreId || '');
     setStaffNote(reception.staffNote || '');
-  }, [reception.receptionId, reception.selectedStoreId, reception.staffNote]);
+  }, [reception.receptionId, reception.selectedStoreId, reception.preferredStoreId, reception.staffNote]);
 
   const handleAssign = () => {
     if (selectedStoreId) {
@@ -430,9 +434,21 @@ export default function ReceptionDetail({
                   </option>
                 ))}
               </select>
+              {/* お客様が選択した店舗の表示 */}
+              {reception.preferredStoreId && !reception.selectedStoreId && (
+                <p className="mt-1 text-xs text-blue-600">
+                  お客様の希望店舗: {formatStoreName(stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}
+                </p>
+              )}
+              {/* 管理者が割り当てた店舗の表示 */}
               {reception.selectedStoreId && (
                 <p className="mt-1 text-xs text-gray-500">
                   現在の割当: {formatStoreName(reception.selectedStoreName || '')}
+                  {reception.preferredStoreId && reception.preferredStoreId !== reception.selectedStoreId && (
+                    <span className="ml-2 text-blue-600">
+                      （お客様希望: {formatStoreName(stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}）
+                    </span>
+                  )}
                 </p>
               )}
               {selectedStoreId && selectedStoreId !== reception.selectedStoreId && (
