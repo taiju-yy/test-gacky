@@ -181,6 +181,18 @@ export default function Dashboard() {
               status: newStatus,
               ...(newStatus === 'confirmed' && { confirmedAt: new Date().toISOString() }),
               ...(newStatus === 'ready' && { readyAt: new Date().toISOString() }),
+              ...(newStatus === 'video_counseling' && { 
+                videoCounselingStatus: 'in_progress' as const,
+                videoCounselingStartedAt: new Date().toISOString(),
+              }),
+              ...(newStatus === 'shipping' && { 
+                shippingAt: new Date().toISOString(),
+                videoCounselingStatus: 'completed' as const,
+                videoCounselingCompletedAt: new Date().toISOString(),
+              }),
+              ...(newStatus === 'shipped' && { 
+                shippedAt: new Date().toISOString(),
+              }),
               ...(newStatus === 'completed' && { 
                 completedAt: new Date().toISOString(),
                 messagingSessionStatus: 'closed' as const,
@@ -215,7 +227,10 @@ export default function Dashboard() {
           timestamp: reception.timestamp,
           status: newStatus,
           userId: reception.userId,
+          userDisplayName: reception.userDisplayName,
+          selectedStoreId: reception.selectedStoreId,
           selectedStoreName: reception.selectedStoreName,
+          deliveryMethod: reception.deliveryMethod,
         }),
       });
 
@@ -224,6 +239,31 @@ export default function Dashboard() {
         console.error('Failed to update status:', data.error);
         // エラー時はリフェッチ
         fetchReceptions();
+      } else if (newStatus === 'video_counseling' && data.data?.videoCallRoomId) {
+        // オンライン服薬指導開始時、店舗側のビデオ通話画面を自動で開く
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        const storeVideoCallUrl = `${baseUrl}/video-call/${data.data.videoCallRoomId}?role=store`;
+        window.open(storeVideoCallUrl, '_blank', 'width=800,height=600');
+        
+        // システムメッセージを追加
+        const systemMessage: PrescriptionMessage = {
+          receptionId,
+          messageId: `msg_system_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          senderType: 'system',
+          senderId: 'system',
+          senderName: 'システム',
+          messageType: 'text',
+          content: 'オンライン服薬指導を開始しました。お客様のLINEにビデオ通話リンクを送信しました。',
+          lineDelivered: true,
+          readByCustomer: true,
+          readByStore: true,
+          ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+        };
+        setMessages((prev) => ({
+          ...prev,
+          [receptionId]: [...(prev[receptionId] || []), systemMessage],
+        }));
       }
     } catch (err) {
       console.error('Error updating status:', err);

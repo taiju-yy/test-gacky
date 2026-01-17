@@ -14,6 +14,9 @@ const statusLabels: Record<ReceptionStatus, string> = {
   confirmed: '確認済み',
   preparing: '調剤中',
   ready: '準備完了',
+  video_counseling: '服薬指導中',
+  shipping: '配送準備中',
+  shipped: '配送中',
   completed: '受取完了',
   cancelled: 'キャンセル',
 };
@@ -23,6 +26,9 @@ const statusColors: Record<ReceptionStatus, string> = {
   confirmed: 'status-confirmed',
   preparing: 'status-preparing',
   ready: 'status-ready',
+  video_counseling: 'status-video-counseling',
+  shipping: 'status-shipping',
+  shipped: 'status-shipped',
   completed: 'status-completed',
   cancelled: 'status-cancelled',
 };
@@ -96,6 +102,18 @@ export default function ReceptionList({ receptions, onSelect, selectedId }: Rece
                 </div>
                 
                 <div className="flex items-center space-x-3">
+                  {/* 受け取り方法アイコン */}
+                  <span 
+                    className={`text-lg flex-shrink-0 ${
+                      reception.deliveryMethod === 'home' 
+                        ? 'opacity-100' 
+                        : 'opacity-50'
+                    }`}
+                    title={reception.deliveryMethod === 'home' ? '自宅受け取り' : '店舗受け取り'}
+                  >
+                    {reception.deliveryMethod === 'home' ? '🏠' : '🏪'}
+                  </span>
+
                   {/* 未読メッセージバッジ */}
                   {reception.unreadMessageCount && reception.unreadMessageCount > 0 && (
                     <span className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">

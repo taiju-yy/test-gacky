@@ -6,7 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDynamoDBClient, TABLES, GetCommand, UpdateCommand, QueryCommand, PutCommand } from '@/lib/dynamodb';
-import { sendReadyNotification, sendTextMessage } from '@/lib/line';
+import { sendReadyNotification, sendTextMessage, sendShippingNotification, sendShippedNotification, sendDeliveryCompletedNotification, sendVideoCallInvitation } from '@/lib/line';
+import { v4 as uuidv4 } from 'uuid';
 
 // DynamoDB クライアントを取得
 const getDB = () => getDynamoDBClient();
@@ -99,17 +100,91 @@ export async function PATCH(
           updateExpression += ', readyAt = :readyAt';
           expressionAttributeValues[':readyAt'] = new Date().toISOString();
           
-          // お客様にLINE通知を送信
+          // お客様にLINE通知を送信（店舗受け取りの場合のみ）
           if (data.userId) {
             const storeName = data.selectedStoreName || 'あおぞら薬局';
             const sent = await sendReadyNotification(data.userId, storeName);
             console.log(`Ready notification sent to ${data.userId}: ${sent}`);
+          }
+        } else if (data.status === 'video_counseling') {
+          // オンライン服薬指導開始（自宅受け取り）
+          // ビデオ通話ルームを作成し、リンクも同時に送信
+          const roomId = `vc_${uuidv4().slice(0, 8)}`;
+          const vcTimestamp = new Date().toISOString();
+          
+          updateExpression += ', videoCounselingStatus = :vcStatus, videoCounselingStartedAt = :vcStartedAt, videoCallRoomId = :roomId';
+          expressionAttributeValues[':vcStatus'] = 'in_progress';
+          expressionAttributeValues[':vcStartedAt'] = vcTimestamp;
+          expressionAttributeValues[':roomId'] = roomId;
+          
+          // ビデオ通話ルームをDynamoDBに保存
+          const room = {
+            roomId,
+            receptionId,
+            userId: data.userId,
+            userDisplayName: data.userDisplayName || 'お客様',
+            storeId: data.selectedStoreId || 'admin',
+            storeName: data.selectedStoreName || 'あおぞら薬局',
+            status: 'waiting',
+            storeCandidates: [],
+            customerCandidates: [],
+            createdAt: vcTimestamp,
+            ttl: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+          };
+          
+          try {
+            await getDB().send(new PutCommand({
+              TableName: TABLES.VIDEO_CALLS,
+              Item: room,
+            }));
+            console.log(`Video call room created: ${roomId}`);
+          } catch (roomError) {
+            console.error('Error creating video call room:', roomError);
+          }
+          
+          // お客様にビデオ通話リンクを送信
+          if (data.userId) {
+            const storeName = data.selectedStoreName || 'あおぞら薬局';
+            const sent = await sendVideoCallInvitation(data.userId, storeName, roomId);
+            console.log(`Video call invitation sent to ${data.userId}: ${sent}`);
+          }
+        } else if (data.status === 'shipping') {
+          // 配送準備中（自宅受け取り）- 服薬指導完了
+          updateExpression += ', shippingAt = :shippingAt, videoCounselingStatus = :vcStatus, videoCounselingCompletedAt = :vcCompletedAt';
+          expressionAttributeValues[':shippingAt'] = new Date().toISOString();
+          expressionAttributeValues[':vcStatus'] = 'completed';
+          expressionAttributeValues[':vcCompletedAt'] = new Date().toISOString();
+          
+          // お客様にLINE通知を送信
+          if (data.userId) {
+            const sent = await sendShippingNotification(data.userId);
+            console.log(`Shipping notification sent to ${data.userId}: ${sent}`);
+          }
+        } else if (data.status === 'shipped') {
+          // 配送中（自宅受け取り）
+          updateExpression += ', shippedAt = :shippedAt';
+          expressionAttributeValues[':shippedAt'] = new Date().toISOString();
+          
+          // お客様にLINE通知を送信（店舗電話番号を含む）
+          if (data.userId) {
+            const storeName = data.selectedStoreName || 'あおぞら薬局';
+            const storePhone = data.storePhone || null; // 店舗電話番号（将来的に店舗マスタから取得）
+            const sent = await sendShippedNotification(data.userId, storeName, storePhone);
+            console.log(`Shipped notification sent to ${data.userId}: ${sent}`);
           }
         } else if (data.status === 'completed') {
           updateExpression += ', completedAt = :completedAt, messagingSessionStatus = :sessionStatus, sessionCloseReason = :closeReason';
           expressionAttributeValues[':completedAt'] = new Date().toISOString();
           expressionAttributeValues[':sessionStatus'] = 'closed';
           expressionAttributeValues[':closeReason'] = 'completed';
+          
+          // 自宅受け取りの場合は配送完了通知を送信（店舗電話番号を含む）
+          if (data.userId && data.deliveryMethod === 'home') {
+            const storeName = data.selectedStoreName || 'あおぞら薬局';
+            const storePhone = data.storePhone || null; // 店舗電話番号（将来的に店舗マスタから取得）
+            const sent = await sendDeliveryCompletedNotification(data.userId, storeName, storePhone);
+            console.log(`Delivery completed notification sent to ${data.userId}: ${sent}`);
+          }
           
           // セッションテーブルも更新（Lambda側のAI応答スキップを解除）
           if (data.userId) {

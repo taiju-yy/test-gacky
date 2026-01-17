@@ -84,7 +84,7 @@ export async function sendTextMessage(userId: string, text: string): Promise<boo
 }
 
 /**
- * 準備完了通知を送信
+ * 準備完了通知を送信（店舗受け取り用）
  */
 export async function sendReadyNotification(userId: string, storeName: string): Promise<boolean> {
   const message = `【準備完了のお知らせ】\n\n${storeName}にて、お薬の準備が整いました。\n\nご都合のよろしい時間にご来局ください。\n\nご不明な点がございましたら、こちらにメッセージをお送りください。`;
@@ -92,5 +92,428 @@ export async function sendReadyNotification(userId: string, storeName: string): 
   return pushMessage({
     to: userId,
     messages: [{ type: 'text', text: message }],
+  });
+}
+
+/**
+ * オンライン服薬指導開始通知を送信（自宅受け取り用）
+ */
+export async function sendVideoCounselingNotification(userId: string): Promise<boolean> {
+  return pushMessage({
+    to: userId,
+    messages: [{
+      type: 'flex',
+      altText: 'オンライン服薬指導のご案内',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '📹',
+            size: '3xl',
+            align: 'center',
+          }],
+          paddingAll: '20px',
+          backgroundColor: '#FCE4EC',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: 'オンライン服薬指導を\n開始します',
+              weight: 'bold',
+              size: 'lg',
+              align: 'center',
+              wrap: true,
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: 'お薬の調剤が完了しました。\n\n担当薬剤師からビデオ通話のリクエストが送信されます。\n\nしばらくお待ちください。',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'lg',
+            },
+          ],
+          paddingAll: '20px',
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '通話にはカメラとマイクの\n許可が必要です',
+            size: 'xs',
+            color: '#999999',
+            wrap: true,
+            align: 'center',
+          }],
+          paddingAll: '10px',
+        },
+      },
+    }],
+  });
+}
+
+/**
+ * 配送準備開始通知を送信（自宅受け取り用）
+ */
+export async function sendShippingNotification(userId: string): Promise<boolean> {
+  return pushMessage({
+    to: userId,
+    messages: [{
+      type: 'flex',
+      altText: '配送準備を開始しました',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '📦',
+            size: '3xl',
+            align: 'center',
+          }],
+          paddingAll: '20px',
+          backgroundColor: '#FFF3E0',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '配送準備を開始しました',
+              weight: 'bold',
+              size: 'lg',
+              align: 'center',
+              wrap: true,
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: 'オンライン服薬指導が完了しました。\n\nお薬の配送準備を開始します。配送が開始されましたらご連絡いたします。',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'lg',
+            },
+          ],
+          paddingAll: '20px',
+        },
+      },
+    }],
+  });
+}
+
+/**
+ * 配送開始通知を送信（自宅受け取り用）
+ * 配送開始後はAI応答モードのため、電話番号での問い合わせを案内
+ */
+export async function sendShippedNotification(userId: string, storeName?: string, storePhone?: string): Promise<boolean> {
+  // 電話番号がない場合はあおぞら薬局の代表番号を使用
+  const phone = storePhone || '0120-XXX-XXX';
+  const store = storeName || 'あおぞら薬局';
+  
+  return pushMessage({
+    to: userId,
+    messages: [{
+      type: 'flex',
+      altText: 'お薬を発送しました',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '🚚',
+            size: '3xl',
+            align: 'center',
+          }],
+          paddingAll: '20px',
+          backgroundColor: '#E8EAF6',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: 'お薬を発送しました',
+              weight: 'bold',
+              size: 'lg',
+              align: 'center',
+              wrap: true,
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: 'お薬の配送を開始しました。\n\nご自宅への到着をお待ちください。',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'lg',
+            },
+            {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                {
+                  type: 'text',
+                  text: '配送についてのお問い合わせ',
+                  size: 'xs',
+                  color: '#888888',
+                },
+                {
+                  type: 'text',
+                  text: store,
+                  size: 'sm',
+                  weight: 'bold',
+                  margin: 'xs',
+                },
+                {
+                  type: 'text',
+                  text: `TEL: ${phone}`,
+                  size: 'sm',
+                  color: '#3F51B5',
+                  margin: 'xs',
+                },
+              ],
+              margin: 'lg',
+              paddingAll: '12px',
+              backgroundColor: '#F5F5F5',
+              cornerRadius: '8px',
+            },
+          ],
+          paddingAll: '20px',
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '電話をかける',
+                uri: `tel:${phone.replace(/-/g, '')}`,
+              },
+              style: 'primary',
+              color: '#3F51B5',
+            },
+          ],
+          paddingAll: '10px',
+        },
+      },
+    }],
+  });
+}
+
+/**
+ * 配送完了通知を送信（自宅受け取り用）
+ * 配送完了後はAI応答モードに戻るため、電話番号での問い合わせを案内
+ */
+export async function sendDeliveryCompletedNotification(userId: string, storeName?: string, storePhone?: string): Promise<boolean> {
+  // 電話番号がない場合はあおぞら薬局の代表番号を使用
+  const phone = storePhone || '0120-XXX-XXX';
+  const store = storeName || 'あおぞら薬局';
+  
+  return pushMessage({
+    to: userId,
+    messages: [{
+      type: 'flex',
+      altText: 'お薬のお届け完了',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '✅',
+            size: '3xl',
+            align: 'center',
+          }],
+          paddingAll: '20px',
+          backgroundColor: '#E8F5E9',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: 'お届け完了',
+              weight: 'bold',
+              size: 'lg',
+              align: 'center',
+              wrap: true,
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: 'お薬が配送されました。\n\nご利用いただきありがとうございました。',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'lg',
+            },
+            {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                {
+                  type: 'text',
+                  text: 'お薬についてのお問い合わせ',
+                  size: 'xs',
+                  color: '#888888',
+                },
+                {
+                  type: 'text',
+                  text: store,
+                  size: 'sm',
+                  weight: 'bold',
+                  margin: 'xs',
+                },
+                {
+                  type: 'text',
+                  text: `TEL: ${phone}`,
+                  size: 'sm',
+                  color: '#4CAF50',
+                  margin: 'xs',
+                },
+              ],
+              margin: 'lg',
+              paddingAll: '12px',
+              backgroundColor: '#F5F5F5',
+              cornerRadius: '8px',
+            },
+          ],
+          paddingAll: '20px',
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '電話をかける',
+                uri: `tel:${phone.replace(/-/g, '')}`,
+              },
+              style: 'primary',
+              color: '#4CAF50',
+            },
+          ],
+          paddingAll: '10px',
+        },
+      },
+    }],
+  });
+}
+
+/**
+ * ビデオ通話招待を送信（オンライン服薬指導開始時）
+ */
+export async function sendVideoCallInvitation(userId: string, storeName: string, roomId: string): Promise<boolean> {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://vpp-implement-prescription.d28rixt8pa2otz.amplifyapp.com';
+  const videoCallUrl = `${baseUrl}/video-call/${roomId}?role=customer`;
+  
+  return pushMessage({
+    to: userId,
+    messages: [
+      {
+        type: 'flex',
+        altText: 'オンライン服薬指導のご案内',
+        contents: {
+          type: 'bubble',
+          hero: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [{
+              type: 'text',
+              text: '📹',
+              size: '3xl',
+              align: 'center',
+            }],
+            paddingAll: '20px',
+            backgroundColor: '#FCE4EC',
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: 'オンライン服薬指導を\n開始します',
+                weight: 'bold',
+                size: 'lg',
+                align: 'center',
+                wrap: true,
+              },
+              {
+                type: 'separator',
+                margin: 'lg',
+              },
+              {
+                type: 'text',
+                text: 'お薬の調剤が完了しました。\n\n下記のボタンをタップして、ビデオ通話に参加してください。',
+                size: 'sm',
+                color: '#666666',
+                wrap: true,
+                margin: 'lg',
+              },
+            ],
+            paddingAll: '20px',
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: {
+                  type: 'uri',
+                  label: 'ビデオ通話に参加',
+                  uri: videoCallUrl,
+                },
+                style: 'primary',
+                color: '#E91E63',
+              },
+              {
+                type: 'text',
+                text: '※通話にはカメラとマイクの許可が必要です\n※リンクの有効期限は24時間です',
+                size: 'xs',
+                color: '#999999',
+                wrap: true,
+                align: 'center',
+                margin: 'md',
+              },
+            ],
+            paddingAll: '10px',
+          },
+        },
+      },
+    ],
   });
 }

@@ -7,8 +7,11 @@ export type ReceptionStatus =
   | 'pending'      // 受付待ち（管理者確認前）
   | 'confirmed'    // 確認済み（店舗に割振り済み）
   | 'preparing'    // 調剤中
-  | 'ready'        // 準備完了
-  | 'completed'    // 受取完了
+  | 'ready'        // 準備完了（店舗受け取りの場合）
+  | 'video_counseling' // オンライン服薬指導中（自宅受け取りの場合）
+  | 'shipping'     // 配送準備中（自宅受け取りの場合）
+  | 'shipped'      // 配送中（自宅受け取りの場合）
+  | 'completed'    // 受取完了（店舗）/ 配送完了（自宅）
   | 'cancelled';   // キャンセル
 
 // 受け取り方法
@@ -73,11 +76,19 @@ export interface PrescriptionReception {
   customerNote?: string;         // お客様からのメモ
   staffNote?: string;            // 管理者/店舗からのメモ
   
+  // ビデオ通話（オンライン服薬指導）情報
+  videoCounselingStatus?: 'not_started' | 'in_progress' | 'completed'; // ビデオ通話状態
+  videoCounselingStartedAt?: string;   // ビデオ通話開始日時
+  videoCounselingCompletedAt?: string; // ビデオ通話終了日時
+  videoCounselingDuration?: number;    // ビデオ通話時間（秒）
+  
   // 日時情報
   confirmedAt?: string;          // 確認日時
   assignedAt?: string;           // 店舗割振り日時
   readyAt?: string;              // 準備完了日時
-  completedAt?: string;          // 受取完了日時
+  shippingAt?: string;           // 配送準備開始日時（自宅受け取り）
+  shippedAt?: string;            // 配送開始日時（自宅受け取り）
+  completedAt?: string;          // 受取完了日時 / 配送完了日時
   sessionClosedAt?: string;      // セッション終了日時
   sessionCloseReason?: SessionCloseReason; // セッション終了理由
   sessionReactivatedAt?: string; // セッション再開日時

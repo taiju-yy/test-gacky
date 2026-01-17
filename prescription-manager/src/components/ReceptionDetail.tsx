@@ -31,6 +31,9 @@ const statusLabels: Record<ReceptionStatus, string> = {
   confirmed: '確認済み',
   preparing: '調剤中',
   ready: '準備完了',
+  video_counseling: '服薬指導中',
+  shipping: '配送準備中',
+  shipped: '配送中',
   completed: '受取完了',
   cancelled: 'キャンセル',
 };
@@ -40,6 +43,9 @@ const statusColors: Record<ReceptionStatus, string> = {
   confirmed: 'bg-blue-100 text-blue-800 border-blue-200',
   preparing: 'bg-purple-100 text-purple-800 border-purple-200',
   ready: 'bg-green-100 text-green-800 border-green-200',
+  video_counseling: 'bg-pink-100 text-pink-800 border-pink-200',
+  shipping: 'bg-orange-100 text-orange-800 border-orange-200',
+  shipped: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   completed: 'bg-gray-100 text-gray-800 border-gray-200',
   cancelled: 'bg-red-100 text-red-800 border-red-200',
 };
@@ -455,14 +461,15 @@ export default function ReceptionDetail({
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">ステータス変更</h3>
               <div className="space-y-3">
+                {/* 受付待ち → 確認済み */}
                 {reception.status === 'pending' && (
                   <div className="space-y-2">
                     <button
                       onClick={() => onStatusChange(reception.receptionId, 'confirmed')}
                       className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={!selectedStoreId}
+                      disabled={reception.deliveryMethod !== 'home' && !selectedStoreId}
                     >
-                      ✓ 確認OK・店舗に送信
+                      ✓ 確認OK・{reception.deliveryMethod === 'home' ? '対応開始' : '店舗に送信'}
                     </button>
                     <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
                       <p className="text-xs text-blue-700">
@@ -470,10 +477,16 @@ export default function ReceptionDetail({
                       </p>
                       <ul className="mt-1 text-xs text-blue-600 space-y-1">
                         <li>• ステータスが「確認済み」に変更されます</li>
-                        <li>• 選択した店舗に処方箋が割り当てられます</li>
-                        <li>• 店舗スタッフが調剤を開始できるようになります</li>
+                        {reception.deliveryMethod === 'home' ? (
+                          <li>• オンライン服薬指導の準備を開始します</li>
+                        ) : (
+                          <>
+                            <li>• 選択した店舗に処方箋が割り当てられます</li>
+                            <li>• 店舗スタッフが調剤を開始できるようになります</li>
+                          </>
+                        )}
                       </ul>
-                      {!selectedStoreId && (
+                      {reception.deliveryMethod !== 'home' && !selectedStoreId && (
                         <p className="mt-2 text-xs text-orange-600 font-medium">
                           ⚠ 先に店舗を選択してください
                         </p>
@@ -481,6 +494,8 @@ export default function ReceptionDetail({
                     </div>
                   </div>
                 )}
+                
+                {/* 確認済み → 調剤開始 */}
                 {reception.status === 'confirmed' && (
                   <div className="space-y-2">
                     <button
@@ -494,25 +509,119 @@ export default function ReceptionDetail({
                     </p>
                   </div>
                 )}
+                
+                {/* 調剤中 → 店舗受け取り: 準備完了 / 自宅受け取り: 服薬指導開始 */}
                 {reception.status === 'preparing' && (
                   <div className="space-y-2">
+                    {reception.deliveryMethod === 'home' ? (
+                      <>
+                        <button
+                          onClick={() => onStatusChange(reception.receptionId, 'video_counseling')}
+                          className="w-full px-4 py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm font-medium"
+                        >
+                          📹 オンライン服薬指導を開始
+                        </button>
+                        <div className="p-3 bg-pink-50 border border-pink-100 rounded-lg">
+                          <p className="text-xs text-pink-700">
+                            <span className="font-medium">このボタンをクリックすると:</span>
+                          </p>
+                          <ul className="mt-1 text-xs text-pink-600 space-y-1">
+                            <li>• ステータスが「服薬指導中」に変更されます</li>
+                            <li>• <strong>お客様のLINEにビデオ通話リンクが送信されます</strong></li>
+                            <li>• 同時に店舗側のビデオ通話画面も開きます</li>
+                          </ul>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => onStatusChange(reception.receptionId, 'ready')}
+                          className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                        >
+                          ✓ 準備完了・お客様にLINE通知
+                        </button>
+                        <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
+                          <p className="text-xs text-green-700">
+                            <span className="font-medium">このボタンをクリックすると:</span>
+                          </p>
+                          <ul className="mt-1 text-xs text-green-600 space-y-1">
+                            <li>• ステータスが「準備完了」に変更されます</li>
+                            <li>• <strong>お客様のLINEに準備完了通知が送信されます</strong></li>
+                          </ul>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                
+                {/* 服薬指導中 → 配送準備中（自宅受け取りのみ） */}
+                {reception.status === 'video_counseling' && (
+                  <div className="space-y-2">
                     <button
-                      onClick={() => onStatusChange(reception.receptionId, 'ready')}
-                      className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                      onClick={() => onStatusChange(reception.receptionId, 'shipping')}
+                      className="w-full px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
                     >
-                      ✓ 準備完了・お客様にLINE通知
+                      📦 服薬指導完了・配送準備開始
                     </button>
-                    <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
-                      <p className="text-xs text-green-700">
+                    <div className="p-3 bg-orange-50 border border-orange-100 rounded-lg">
+                      <p className="text-xs text-orange-700">
                         <span className="font-medium">このボタンをクリックすると:</span>
                       </p>
-                      <ul className="mt-1 text-xs text-green-600 space-y-1">
-                        <li>• ステータスが「準備完了」に変更されます</li>
-                        <li>• <strong>お客様のLINEに準備完了通知が送信されます</strong></li>
+                      <ul className="mt-1 text-xs text-orange-600 space-y-1">
+                        <li>• オンライン服薬指導が完了として記録されます</li>
+                        <li>• ステータスが「配送準備中」に変更されます</li>
+                        <li>• お客様のLINEに配送準備開始通知が送信されます</li>
+                      </ul>
+                    </div>
+                    
+                    {/* ビデオ通話ステータス表示 */}
+                    {reception.videoCounselingStartedAt && (
+                      <div className="p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-600">
+                          📹 通話開始: {new Date(reception.videoCounselingStartedAt).toLocaleString('ja-JP')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* 配送準備中 → 配送中（自宅受け取りのみ） */}
+                {reception.status === 'shipping' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => onStatusChange(reception.receptionId, 'shipped')}
+                      className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                    >
+                      🚚 配送開始・お客様に通知
+                    </button>
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+                      <p className="text-xs text-indigo-700">
+                        <span className="font-medium">このボタンをクリックすると:</span>
+                      </p>
+                      <ul className="mt-1 text-xs text-indigo-600 space-y-1">
+                        <li>• ステータスが「配送中」に変更されます</li>
+                        <li>• <strong>お客様のLINEに配送開始通知が送信されます</strong></li>
                       </ul>
                     </div>
                   </div>
                 )}
+                
+                {/* 配送中 → 配送完了（自宅受け取りのみ） */}
+                {reception.status === 'shipped' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => onStatusChange(reception.receptionId, 'completed')}
+                      className="w-full px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
+                    >
+                      ✓ 配送完了
+                    </button>
+                    <p className="text-xs text-gray-500">
+                      お薬が配送されたらクリックしてください
+                    </p>
+                  </div>
+                )}
+                
+                {/* 準備完了 → 受取完了（店舗受け取りのみ） */}
                 {reception.status === 'ready' && (
                   <div className="space-y-2">
                     <button
@@ -526,6 +635,8 @@ export default function ReceptionDetail({
                     </p>
                   </div>
                 )}
+                
+                {/* キャンセルボタン */}
                 {reception.status !== 'completed' && reception.status !== 'cancelled' && (
                   <button
                     onClick={() => onStatusChange(reception.receptionId, 'cancelled')}
