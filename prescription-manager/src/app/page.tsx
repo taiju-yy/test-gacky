@@ -335,6 +335,10 @@ export default function Dashboard() {
           timestamp: reception.timestamp,
           storeId,
           storeName: store.storeName,
+          // 店舗変更通知用の情報
+          userId: reception.userId,
+          // お客様の元の店舗: preferredStoreId または selectedStoreId
+          originalStoreId: reception.preferredStoreId || reception.selectedStoreId,
         }),
       });
     } catch (err) {

@@ -239,6 +239,19 @@ export async function PATCH(
         expressionAttributeValues[':storeId'] = data.storeId;
         expressionAttributeValues[':storeName'] = data.storeName;
         expressionAttributeValues[':assignedAt'] = new Date().toISOString();
+        
+        // お客様の元の店舗と異なる店舗に割り当てられた場合、LINE通知を送信
+        // originalStoreId: お客様が選択した店舗（preferredStoreId または selectedStoreId）
+        if (data.userId && data.originalStoreId && data.storeId !== data.originalStoreId) {
+          const storeName = data.storeName || 'あおぞら薬局';
+          // 「あおぞら薬局」プレフィックスを除去して店舗名を取得
+          const displayStoreName = storeName
+            .replace(/^あおぞら薬局[\s　]*/g, '')
+            .replace(/^Aozora[\s　]*/gi, '');
+          const message = `【お知らせ】\n\nお客様の処方箋について、調剤を担当する店舗が変更になりました。\n\n担当店舗: あおぞら薬局 ${displayStoreName}\n\nお薬の準備ができ次第ご連絡いたします。ご不明な点がございましたら、こちらにメッセージをお送りください。`;
+          const sent = await sendTextMessage(data.userId, message);
+          console.log(`Store change notification sent to ${data.userId}: ${sent}`);
+        }
         break;
 
       case 'updateNote':
