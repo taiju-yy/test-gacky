@@ -973,21 +973,6 @@ function generateReceptionConfirmMessage(receptionId, flowState = null) {
         contents: bodyContents,
         paddingAll: '20px',
       },
-      footer: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: 'お薬についてご不明点があれば、\nこちらにメッセージをお送りください。',
-            size: 'xs',
-            color: '#999999',
-            wrap: true,
-            align: 'center',
-          },
-        ],
-        paddingAll: '10px',
-      },
     },
   };
 }
