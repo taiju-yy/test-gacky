@@ -62,10 +62,33 @@ export default function ReceptionDetail({
   onDeliveryMethodChange,
   onClose,
 }: ReceptionDetailProps) {
-  // 店舗IDの初期値: 管理者が割り当てた店舗 > お客様が選択した店舗 > 空
-  const [selectedStoreId, setSelectedStoreId] = useState(
-    reception.selectedStoreId || reception.preferredStoreId || ''
-  );
+  // 店舗名から店舗IDを取得するヘルパー関数
+  const getStoreIdByName = (storeName: string | undefined): string => {
+    if (!storeName) return '';
+    // 完全一致で検索
+    let store = stores.find(s => s.storeName === storeName);
+    if (store) return store.storeId;
+    // 「あおぞら薬局」プレフィックスを除去して検索
+    const normalizedName = storeName.replace(/^あおぞら薬局[\s　]*/g, '').replace(/^Aozora[\s　]*/gi, '');
+    store = stores.find(s => 
+      s.storeName === normalizedName || 
+      s.storeName.replace(/^あおぞら薬局[\s　]*/g, '').replace(/^Aozora[\s　]*/gi, '') === normalizedName
+    );
+    return store?.storeId || '';
+  };
+
+  // 店舗IDの初期値を計算
+  // 1. 管理者が割り当てた店舗ID
+  // 2. お客様が選択した店舗ID
+  // 3. 店舗名からIDを逆引き（IDがない場合のフォールバック）
+  const getInitialStoreId = (): string => {
+    if (reception.selectedStoreId) return reception.selectedStoreId;
+    if (reception.preferredStoreId) return reception.preferredStoreId;
+    // IDがない場合は店舗名から逆引き
+    return getStoreIdByName(reception.selectedStoreName);
+  };
+
+  const [selectedStoreId, setSelectedStoreId] = useState(getInitialStoreId());
   const [staffNote, setStaffNote] = useState(reception.staffNote || '');
   const [activeTab, setActiveTab] = useState<'info' | 'message'>('info');
   const [isReactivating, setIsReactivating] = useState(false);
@@ -122,10 +145,13 @@ export default function ReceptionDetail({
 
   // reception変更時にstateを更新
   useEffect(() => {
-    // 店舗ID: 管理者が割り当てた店舗 > お客様が選択した店舗 > 空
-    setSelectedStoreId(reception.selectedStoreId || reception.preferredStoreId || '');
+    // 店舗ID: 管理者が割り当てた店舗ID > お客様選択店舗ID > 店舗名から逆引き
+    const newStoreId = reception.selectedStoreId || 
+                       reception.preferredStoreId || 
+                       getStoreIdByName(reception.selectedStoreName);
+    setSelectedStoreId(newStoreId);
     setStaffNote(reception.staffNote || '');
-  }, [reception.receptionId, reception.selectedStoreId, reception.preferredStoreId, reception.staffNote]);
+  }, [reception.receptionId, reception.selectedStoreId, reception.preferredStoreId, reception.selectedStoreName, reception.staffNote, stores]);
 
   const handleAssign = () => {
     if (selectedStoreId) {
