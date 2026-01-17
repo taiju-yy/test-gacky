@@ -434,19 +434,14 @@ export default function ReceptionDetail({
                   </option>
                 ))}
               </select>
-              {/* お客様が選択した店舗の表示 */}
-              {reception.preferredStoreId && !reception.selectedStoreId && (
-                <p className="mt-1 text-xs text-blue-600">
-                  お客様の希望店舗: {formatStoreName(stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}
-                </p>
-              )}
-              {/* 管理者が割り当てた店舗の表示 */}
-              {reception.selectedStoreId && (
+              {/* 現在の店舗表示（お客様希望 or 管理者変更後） */}
+              {(reception.selectedStoreId || reception.preferredStoreId) && (
                 <p className="mt-1 text-xs text-gray-500">
-                  現在の割当: {formatStoreName(reception.selectedStoreName || '')}
-                  {reception.preferredStoreId && reception.preferredStoreId !== reception.selectedStoreId && (
-                    <span className="ml-2 text-blue-600">
-                      （お客様希望: {formatStoreName(stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}）
+                  現在の割当: {formatStoreName(reception.selectedStoreName || stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}
+                  {/* 管理者がお客様の希望店舗から変更した場合のみ表示 */}
+                  {reception.preferredStoreId && reception.selectedStoreId && reception.preferredStoreId !== reception.selectedStoreId && (
+                    <span className="ml-2 text-orange-600">
+                      （お客様希望から変更済み）
                     </span>
                   )}
                 </p>
