@@ -240,8 +240,9 @@ export async function PATCH(
         expressionAttributeValues[':storeName'] = data.storeName;
         expressionAttributeValues[':assignedAt'] = new Date().toISOString();
         
-        // お客様の希望店舗と異なる店舗に割り当てられた場合、LINE通知を送信
-        if (data.userId && data.preferredStoreId && data.storeId !== data.preferredStoreId) {
+        // お客様の元の店舗と異なる店舗に割り当てられた場合、LINE通知を送信
+        // originalStoreId: お客様が選択した店舗（preferredStoreId または selectedStoreId）
+        if (data.userId && data.originalStoreId && data.storeId !== data.originalStoreId) {
           const storeName = data.storeName || 'あおぞら薬局';
           // 「あおぞら薬局」プレフィックスを除去して店舗名を取得
           const displayStoreName = storeName
