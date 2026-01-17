@@ -78,14 +78,14 @@ export default function ReceptionDetail({
   };
 
   // 店舗IDの初期値を計算
-  // 1. 管理者が割り当てた店舗ID
-  // 2. お客様が選択した店舗ID
-  // 3. 店舗名からIDを逆引き（IDがない場合のフォールバック）
+  // LINE Bot側のstoreId形式と店舗マスタのstoreId形式が異なる場合があるため、
+  // 店舗名からの逆引きを優先する
   const getInitialStoreId = (): string => {
-    if (reception.selectedStoreId) return reception.selectedStoreId;
-    if (reception.preferredStoreId) return reception.preferredStoreId;
-    // IDがない場合は店舗名から逆引き
-    return getStoreIdByName(reception.selectedStoreName);
+    // 店舗名から逆引き（最も確実な方法）
+    const resolvedId = getStoreIdByName(reception.selectedStoreName);
+    if (resolvedId) return resolvedId;
+    // フォールバック: 保存されているIDを使用
+    return reception.selectedStoreId || reception.preferredStoreId || '';
   };
 
   const [selectedStoreId, setSelectedStoreId] = useState(getInitialStoreId());
@@ -145,22 +145,17 @@ export default function ReceptionDetail({
 
   // reception変更時またはstoresロード時にstateを更新
   useEffect(() => {
-    // 店舗ID: 管理者が割り当てた店舗ID > お客様選択店舗ID > 店舗名から逆引き
+    // 店舗名から店舗マスタのIDを逆引き
+    // LINE Bot側のstoreId形式（例: store_morimoto）と
+    // 店舗マスタのstoreId形式（例: store_007）が異なる場合があるため、
+    // 店舗名からの逆引きを優先する
     const resolvedStoreId = getStoreIdByName(reception.selectedStoreName);
-    const newStoreId = reception.selectedStoreId || 
-                       reception.preferredStoreId || 
-                       resolvedStoreId;
     
-    // デバッグログ（本番では削除）
-    console.log('[ReceptionDetail] Store selection debug:', {
-      selectedStoreId: reception.selectedStoreId,
-      preferredStoreId: reception.preferredStoreId,
-      selectedStoreName: reception.selectedStoreName,
-      resolvedStoreId,
-      newStoreId,
-      storesCount: stores.length,
-      storeNames: stores.slice(0, 5).map(s => s.storeName),
-    });
+    // 店舗名から解決できた場合はそれを使用、できない場合は保存されているIDを使用
+    const newStoreId = resolvedStoreId || 
+                       reception.selectedStoreId || 
+                       reception.preferredStoreId || 
+                       '';
     
     setSelectedStoreId(newStoreId);
     setStaffNote(reception.staffNote || '');
