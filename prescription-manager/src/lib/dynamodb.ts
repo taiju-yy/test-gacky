@@ -14,6 +14,7 @@ import {
   QueryCommand,
   UpdateCommand,
   ScanCommand,
+  DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 // シングルトンインスタンスをキャッシュ
@@ -61,6 +62,7 @@ export function getTables() {
     SESSIONS: process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-prescription-sessions-dev',
     STORES: process.env.TABLE_STORES || 'gacky-prescription-stores-dev',
     CUSTOMER_PROFILES: process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev',
+    VIDEO_CALLS: process.env.TABLE_VIDEO_CALLS || 'gacky-prescription-video-calls-dev',
   };
 }
 
@@ -72,6 +74,7 @@ export const TABLES = {
   get SESSIONS() { return process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-prescription-sessions-dev'; },
   get STORES() { return process.env.TABLE_STORES || 'gacky-prescription-stores-dev'; },
   get CUSTOMER_PROFILES() { return process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev'; },
+  get VIDEO_CALLS() { return process.env.TABLE_VIDEO_CALLS || 'gacky-prescription-video-calls-dev'; },
 };
 
 // エクスポート
@@ -81,4 +84,5 @@ export {
   QueryCommand,
   UpdateCommand,
   ScanCommand,
+  DeleteCommand,
 };

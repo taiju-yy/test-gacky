@@ -123,7 +123,15 @@ npm run dev
 aws cloudformation deploy \
   --template-file cloudformation-tables.yaml \
   --stack-name gacky-prescription-tables \
-  --parameter-overrides Environment=dev
+  --parameter-overrides Environment=dev \
+  --capabilities CAPABILITY_IAM \
+  --profile gacky-admin
+```
+
+### S3 Bucket 作成
+
+```bash
+aws s3 mb s3://gacky-prescriptions-dev --region ap-northeast-1 --profile gacky-admin
 ```
 
 ## 環境変数

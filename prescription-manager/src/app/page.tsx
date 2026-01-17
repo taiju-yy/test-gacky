@@ -7,7 +7,6 @@ import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
 import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
 
-// セッションタイムアウト時間（分）- Lambda側と同じ値
 const SESSION_TIMEOUT_MINUTES = 30;
 
 /**
@@ -526,7 +525,7 @@ export default function Dashboard() {
     }
   };
 
-  // 受け取り方法変更ハンドラ
+    // 受け取り方法変更ハンドラ
   const handleDeliveryMethodChange = async (receptionId: string, deliveryMethod: DeliveryMethod, notifyCustomer: boolean) => {
     const reception = receptions.find((r) => r.receptionId === receptionId);
     if (!reception) return;
@@ -580,6 +579,60 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Error updating delivery method:', err);
       fetchReceptions();
+    }
+  };
+
+  // ビデオ通話開始ハンドラ
+  const handleStartVideoCall = async (receptionId: string): Promise<string | null> => {
+    const reception = receptions.find((r) => r.receptionId === receptionId);
+    if (!reception) return null;
+
+    try {
+      const response = await fetch('/api/video-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receptionId,
+          userId: reception.userId,
+          userDisplayName: reception.userDisplayName,
+          storeId: reception.selectedStoreId,
+          storeName: reception.selectedStoreName,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('Video call room created:', data.data.roomId);
+        
+        // システムメッセージをローカルに追加
+        const systemMessage: PrescriptionMessage = {
+          receptionId,
+          messageId: `msg_system_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          senderType: 'system',
+          senderId: 'system',
+          senderName: 'システム',
+          messageType: 'text',
+          content: 'ビデオ通話のリクエストをお客様に送信しました',
+          lineDelivered: data.data.lineDelivered,
+          readByCustomer: false,
+          readByStore: true,
+          ttl: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+        };
+        setMessages((prev) => ({
+          ...prev,
+          [receptionId]: [...(prev[receptionId] || []), systemMessage],
+        }));
+
+        return data.data.storeVideoCallUrl;
+      } else {
+        console.error('Failed to create video call room:', data.error);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error starting video call:', err);
+      return null;
     }
   };
 
@@ -680,6 +733,7 @@ export default function Dashboard() {
                 onSendMessage={handleSendMessage}
                 onReactivateSession={handleReactivateSession}
                 onDeliveryMethodChange={handleDeliveryMethodChange}
+                onStartVideoCall={handleStartVideoCall}
                 onClose={() => setSelectedReception(null)}
               />
             ) : (

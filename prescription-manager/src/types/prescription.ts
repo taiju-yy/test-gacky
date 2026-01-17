@@ -16,7 +16,7 @@ export type DeliveryMethod =
   | 'store'        // 店舗受け取り
   | 'home';        // 自宅受け取り（オンライン服薬指導）
 
-// メッセージングセッションのステータス
+  // メッセージングセッションのステータス
 export type MessagingSessionStatus = 
   | 'inactive'     // 店舗とのやりとりなし（AI応答有効）
   | 'active'       // 店舗とやりとり中（AI応答スキップ）
@@ -59,7 +59,7 @@ export interface PrescriptionReception {
   deliveryMethod?: DeliveryMethod;     // 受け取り方法（店舗 or 自宅）
   preferredPickupTime?: string;        // 希望受け取り時間
   preferredPickupTimeText?: string;    // 希望受け取り時間（表示用テキスト）
-  
+
   // 店舗情報
   selectedStoreId?: string;      // 選択された店舗ID
   selectedStoreName?: string;    // 選択された店舗名
@@ -157,3 +157,39 @@ export type NotificationType =
   | 'preparation_started'     // 調剤開始
   | 'ready_for_pickup'        // 準備完了
   | 'message_from_store';     // 店舗からのメッセージ
+
+// ビデオ通話ルームのステータス
+export type VideoCallStatus = 
+  | 'waiting'     // 参加者待ち
+  | 'connecting'  // 接続中
+  | 'active'      // 通話中
+  | 'ended';      // 終了
+
+// ビデオ通話ルーム情報（DynamoDBに保存）
+export interface VideoCallRoom {
+  roomId: string;              // ルームID（PK）
+  receptionId: string;         // 関連する受付ID
+  
+  // 参加者情報
+  storeId?: string;            // 店舗ID
+  storeName?: string;          // 店舗名
+  userId?: string;             // お客様のLINE ユーザーID
+  userDisplayName?: string;    // お客様の表示名
+  
+  // ステータス
+  status: VideoCallStatus;
+  
+  // WebRTCシグナリング用
+  offer?: string;              // SDP Offer（JSON文字列）
+  answer?: string;             // SDP Answer（JSON文字列）
+  storeCandidates?: string[];  // 店舗側のICE Candidates
+  customerCandidates?: string[]; // お客様側のICE Candidates
+  
+  // 日時情報
+  createdAt: string;           // ルーム作成日時
+  startedAt?: string;          // 通話開始日時
+  endedAt?: string;            // 通話終了日時
+  
+  // TTL（24時間後に自動削除）
+  ttl: number;
+}

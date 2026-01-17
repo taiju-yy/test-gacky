@@ -6,9 +6,10 @@ interface StatCardProps {
   icon: 'clock' | 'flask' | 'check' | 'chart';
   color?: 'yellow' | 'purple' | 'green' | 'blue';
   onClick?: () => void;
+  active?: boolean;
 }
 
-export default function StatCard({ title, value, icon, color = 'blue', onClick }: StatCardProps) {
+export default function StatCard({ title, value, icon, color = 'blue', onClick, active = false }: StatCardProps) {
   const iconMap = {
     clock: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -39,13 +40,20 @@ export default function StatCard({ title, value, icon, color = 'blue', onClick }
     blue: 'text-blue-500',
   };
 
+  const activeColorMap = {
+    yellow: 'ring-2 ring-yellow-400 bg-yellow-50',
+    purple: 'ring-2 ring-purple-400 bg-purple-50',
+    green: 'ring-2 ring-green-400 bg-green-50',
+    blue: 'ring-2 ring-blue-400 bg-blue-50',
+  };
+
   return (
     <div 
-      className="stat-card cursor-pointer"
+      className={`stat-card cursor-pointer transition-all ${active ? activeColorMap[color] : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-gray-500">{title}</span>
+        <span className={`text-sm ${active ? 'font-medium text-gray-700' : 'text-gray-500'}`}>{title}</span>
         <span className={colorMap[color]}>
           {iconMap[icon]}
         </span>
