@@ -434,12 +434,6 @@ export default function ReceptionDetail({
                   </option>
                 ))}
               </select>
-              {/* 現在の店舗表示（お客様希望 or 管理者変更後） */}
-              {(reception.selectedStoreId || reception.preferredStoreId) && (
-                <p className="mt-1 text-xs text-gray-500">
-                  現在の割当: {formatStoreName(reception.selectedStoreName || stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}
-                </p>
-              )}
               {selectedStoreId && selectedStoreId !== reception.selectedStoreId && (
                 <button
                   onClick={handleAssign}
