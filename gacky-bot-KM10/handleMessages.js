@@ -35,6 +35,28 @@ const {
 } = require('./utils');
 const { handleStoreCommand } = require('./selectStoreManager');
 const { startPrescriptionMode } = require('./prescriptionManager');
+const { storeList, getStoreById, getNearestStores } = require('./storeList');
+const {
+  FLOW_STEPS,
+  POSTBACK_PREFIX,
+  DELIVERY_METHODS,
+  createDeliveryMethodSelectionMessage,
+  createHomeDeliveryConfirmMessage,
+  createStoreSearchMethodMessage,
+  createLocationRequestMessage,
+  createAddressInputMessage,
+  createStoreSelectionMessage,
+  createStoreConfirmationMessage,
+  createPickupTimeInputMessage,
+  createCustomTimeInputMessage,
+  createPrescriptionImageRequestMessage,
+  saveFlowState,
+  getFlowState,
+  resetFlowState,
+  getUserStoreHistory,
+  searchStoresByAddress,
+  getPickupTimeText,
+} = require('./prescriptionFlowManager');
 
 const availableMessageTypes = [
   'text', //テキスト
@@ -1013,70 +1035,479 @@ const keywordPrescription = '処方箋を送る';
 
 // 処方箋送付案内アクション
 // リッチメニューから「処方箋を送る」を押したときに呼び出される
-// 処方箋受付モードを開始し、次に送られる画像を処方箋として受け付ける
+// 新しいフロー: まず受け取り方法（店舗 or 自宅）を選択させる
 async function showPrescriptionGuideAction(props) {
   const { userId } = props;
 
-  // 処方箋受付モードを開始（10分間有効）
-  await startPrescriptionMode(userId);
-  console.log(`Prescription mode started for user ${userId}`);
+  console.log(`Prescription flow started for user ${userId}`);
 
-  const replyMessages = [{
-    type: 'flex',
-    altText: '処方箋の送り方',
-    contents: {
-      type: 'bubble',
-      hero: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '📋',
-            size: '3xl',
-            align: 'center',
-          },
-        ],
-        paddingAll: '20px',
-        backgroundColor: '#E3F2FD',
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '処方箋を送る',
-            weight: 'bold',
-            size: 'lg',
-            align: 'center',
-          },
-          {
-            type: 'separator',
-            margin: 'lg',
-          },
-          {
-            type: 'text',
-            text: '処方箋の写真を撮って、このチャットに送ってね！\n\n📸 処方箋全体が写るように撮影してね\n\n受け取ったら、お近くのあおぞら薬局でお薬を準備するよ！',
-            size: 'sm',
-            wrap: true,
-            margin: 'lg',
-          },
-          {
-            type: 'text',
-            text: '※ 10分以内に画像を送信してください',
-            size: 'xs',
-            color: '#888888',
-            align: 'center',
-            margin: 'lg',
-          },
-        ],
-        paddingAll: '20px',
-      },
-    },
-  }];
+  // フローの初期状態を設定
+  await saveFlowState(userId, {
+    step: FLOW_STEPS.SELECT_DELIVERY_METHOD,
+    deliveryMethod: null,
+    selectedStoreId: null,
+    pickupTime: null,
+    pickupTimeText: null,
+    previousStep: FLOW_STEPS.IDLE,
+  });
+
+  // 受け取り方法選択メッセージを送信
+  const replyMessages = [createDeliveryMethodSelectionMessage()];
 
   await commonAction(props, replyMessages);
+}
+
+/**
+ * 処方箋フローのpostbackハンドラー
+ * 新しいフロー: 受け取り方法選択 → 店舗選択 → 受け取り時間入力 → 処方箋送信
+ */
+async function handlePrescriptionFlowPostback(props, postbackData) {
+  const { userId } = props;
+  
+  console.log(`Handling prescription flow postback for user ${userId}: ${postbackData}`);
+
+  // 現在のフロー状態を取得
+  let flowState = await getFlowState(userId);
+
+  // やり直し
+  if (postbackData === POSTBACK_PREFIX.RESTART) {
+    await resetFlowState(userId);
+    const replyMessages = [createDeliveryMethodSelectionMessage()];
+    await saveFlowState(userId, {
+      step: FLOW_STEPS.SELECT_DELIVERY_METHOD,
+      deliveryMethod: null,
+      selectedStoreId: null,
+      pickupTime: null,
+      pickupTimeText: null,
+      previousStep: FLOW_STEPS.IDLE,
+    });
+    return await commonAction(props, replyMessages);
+  }
+
+  // 戻るボタン
+  if (postbackData === POSTBACK_PREFIX.BACK) {
+    return await handleBackAction(props, flowState);
+  }
+
+  // 受け取り方法選択
+  if (postbackData.startsWith(POSTBACK_PREFIX.DELIVERY_METHOD)) {
+    const method = postbackData.replace(POSTBACK_PREFIX.DELIVERY_METHOD, '');
+    return await handleDeliveryMethodSelection(props, method, flowState);
+  }
+
+  // 店舗検索方法選択
+  if (postbackData.startsWith(POSTBACK_PREFIX.STORE_SEARCH)) {
+    const searchMethod = postbackData.replace(POSTBACK_PREFIX.STORE_SEARCH, '');
+    return await handleStoreSearchMethodSelection(props, searchMethod, flowState);
+  }
+
+  // 店舗選択
+  if (postbackData.startsWith(POSTBACK_PREFIX.SELECT_STORE)) {
+    const storeId = postbackData.replace(POSTBACK_PREFIX.SELECT_STORE, '');
+    return await handleStoreSelection(props, storeId, flowState);
+  }
+
+  // 店舗確認
+  if (postbackData.startsWith(POSTBACK_PREFIX.CONFIRM_STORE)) {
+    const confirmation = postbackData.replace(POSTBACK_PREFIX.CONFIRM_STORE, '');
+    return await handleStoreConfirmation(props, confirmation, flowState);
+  }
+
+  // 受け取り時間選択
+  if (postbackData.startsWith(POSTBACK_PREFIX.PICKUP_TIME)) {
+    const timeOption = postbackData.replace(POSTBACK_PREFIX.PICKUP_TIME, '');
+    return await handlePickupTimeSelection(props, timeOption, flowState);
+  }
+
+  console.log(`Unknown postback data: ${postbackData}`);
+  return null;
+}
+
+/**
+ * 戻るボタンの処理
+ */
+async function handleBackAction(props, flowState) {
+  const { userId } = props;
+  let replyMessages;
+  let newState;
+
+  switch (flowState.step) {
+    case FLOW_STEPS.SELECT_STORE_SEARCH:
+      // 店舗検索方法選択 → 受け取り方法選択
+      replyMessages = [createDeliveryMethodSelectionMessage()];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.SELECT_DELIVERY_METHOD,
+        previousStep: flowState.step,
+      };
+      break;
+
+    case FLOW_STEPS.WAITING_LOCATION:
+    case FLOW_STEPS.WAITING_ADDRESS:
+    case FLOW_STEPS.SELECT_STORE:
+      // 位置情報/住所入力/店舗選択 → 店舗検索方法選択
+      const hasHistory = (await getUserStoreHistory(userId)).length > 0;
+      replyMessages = [createStoreSearchMethodMessage(hasHistory)];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.SELECT_STORE_SEARCH,
+        previousStep: flowState.step,
+      };
+      break;
+
+    case FLOW_STEPS.CONFIRM_STORE:
+      // 店舗確認 → 店舗検索方法選択
+      const hasHistory2 = (await getUserStoreHistory(userId)).length > 0;
+      replyMessages = [createStoreSearchMethodMessage(hasHistory2)];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.SELECT_STORE_SEARCH,
+        selectedStoreId: null,
+        previousStep: flowState.step,
+      };
+      break;
+
+    case FLOW_STEPS.INPUT_PICKUP_TIME:
+      // 受け取り時間入力 → 店舗確認（または店舗検索）
+      if (flowState.selectedStoreId) {
+        const store = getStoreById(flowState.selectedStoreId);
+        replyMessages = [createStoreConfirmationMessage(store)];
+        newState = {
+          ...flowState,
+          step: FLOW_STEPS.CONFIRM_STORE,
+          previousStep: flowState.step,
+        };
+      } else {
+        const hasHistory3 = (await getUserStoreHistory(userId)).length > 0;
+        replyMessages = [createStoreSearchMethodMessage(hasHistory3)];
+        newState = {
+          ...flowState,
+          step: FLOW_STEPS.SELECT_STORE_SEARCH,
+          previousStep: flowState.step,
+        };
+      }
+      break;
+
+    case FLOW_STEPS.WAITING_PRESCRIPTION:
+      // 処方箋画像待ち → 受け取り時間入力
+      replyMessages = [createPickupTimeInputMessage()];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.INPUT_PICKUP_TIME,
+        pickupTime: null,
+        pickupTimeText: null,
+        previousStep: flowState.step,
+      };
+      break;
+
+    default:
+      // デフォルト: 最初から
+      replyMessages = [createDeliveryMethodSelectionMessage()];
+      newState = {
+        step: FLOW_STEPS.SELECT_DELIVERY_METHOD,
+        deliveryMethod: null,
+        selectedStoreId: null,
+        pickupTime: null,
+        pickupTimeText: null,
+        previousStep: flowState.step,
+      };
+  }
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 受け取り方法選択の処理
+ */
+async function handleDeliveryMethodSelection(props, method, flowState) {
+  const { userId } = props;
+  let replyMessages;
+  let newState;
+
+  if (method === DELIVERY_METHODS.STORE) {
+    // 店舗受け取り → 店舗検索方法選択
+    const storeHistory = await getUserStoreHistory(userId);
+    const hasHistory = storeHistory.length > 0;
+    replyMessages = [createStoreSearchMethodMessage(hasHistory)];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.SELECT_STORE_SEARCH,
+      deliveryMethod: DELIVERY_METHODS.STORE,
+      previousStep: flowState.step,
+    };
+  } else if (method === DELIVERY_METHODS.HOME) {
+    // 自宅受け取り → 注意事項確認
+    replyMessages = [createHomeDeliveryConfirmMessage()];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.SELECT_DELIVERY_METHOD, // まだ確認中
+      deliveryMethod: DELIVERY_METHODS.HOME,
+      previousStep: flowState.step,
+    };
+  } else {
+    console.log(`Unknown delivery method: ${method}`);
+    return null;
+  }
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 店舗検索方法選択の処理
+ */
+async function handleStoreSearchMethodSelection(props, searchMethod, flowState) {
+  const { userId } = props;
+  let replyMessages;
+  let newState;
+
+  switch (searchMethod) {
+    case 'history':
+      // 履歴から選択
+      const storeHistory = await getUserStoreHistory(userId);
+      if (storeHistory.length === 0) {
+        // 履歴がない場合は店舗検索方法選択に戻す
+        replyMessages = [{
+          type: 'text',
+          text: '過去の利用履歴がありません。\n別の方法で店舗を探してください。',
+        }, createStoreSearchMethodMessage(false)];
+        newState = flowState;
+      } else {
+        replyMessages = [createStoreSelectionMessage(storeHistory, 'history')];
+        newState = {
+          ...flowState,
+          step: FLOW_STEPS.SELECT_STORE,
+          previousStep: flowState.step,
+        };
+      }
+      break;
+
+    case 'location':
+      // 現在地から探す
+      replyMessages = [createLocationRequestMessage()];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.WAITING_LOCATION,
+        previousStep: flowState.step,
+      };
+      break;
+
+    case 'address':
+      // 住所を入力
+      replyMessages = [createAddressInputMessage()];
+      newState = {
+        ...flowState,
+        step: FLOW_STEPS.WAITING_ADDRESS,
+        previousStep: flowState.step,
+      };
+      break;
+
+    default:
+      console.log(`Unknown search method: ${searchMethod}`);
+      return null;
+  }
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 店舗選択の処理
+ */
+async function handleStoreSelection(props, storeId, flowState) {
+  const { userId } = props;
+  
+  const store = getStoreById(storeId);
+  if (!store) {
+    console.log(`Store not found: ${storeId}`);
+    return null;
+  }
+
+  // 店舗確認メッセージを表示
+  const replyMessages = [createStoreConfirmationMessage(store)];
+  const newState = {
+    ...flowState,
+    step: FLOW_STEPS.CONFIRM_STORE,
+    selectedStoreId: storeId,
+    previousStep: flowState.step,
+  };
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 店舗確認の処理
+ */
+async function handleStoreConfirmation(props, confirmation, flowState) {
+  const { userId } = props;
+  let replyMessages;
+  let newState;
+
+  if (confirmation === 'yes') {
+    // 店舗確定 → 受け取り時間入力
+    replyMessages = [createPickupTimeInputMessage()];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.INPUT_PICKUP_TIME,
+      previousStep: flowState.step,
+    };
+  } else if (confirmation === 'no') {
+    // 店舗選び直し
+    const hasHistory = (await getUserStoreHistory(userId)).length > 0;
+    replyMessages = [createStoreSearchMethodMessage(hasHistory)];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.SELECT_STORE_SEARCH,
+      selectedStoreId: null,
+      previousStep: flowState.step,
+    };
+  } else if (confirmation === 'home_confirmed') {
+    // 自宅受け取り確定 → 受け取り時間入力をスキップして処方箋画像待ち
+    await startPrescriptionMode(userId);
+    replyMessages = [createPrescriptionImageRequestMessage(null, null, DELIVERY_METHODS.HOME)];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.WAITING_PRESCRIPTION,
+      deliveryMethod: DELIVERY_METHODS.HOME,
+      previousStep: flowState.step,
+    };
+  } else {
+    console.log(`Unknown confirmation: ${confirmation}`);
+    return null;
+  }
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 受け取り時間選択の処理
+ */
+async function handlePickupTimeSelection(props, timeOption, flowState) {
+  const { userId } = props;
+  let replyMessages;
+  let newState;
+
+  if (timeOption === 'custom') {
+    // カスタム日時入力
+    replyMessages = [createCustomTimeInputMessage()];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.INPUT_PICKUP_TIME, // 入力待ち
+      pickupTime: 'custom',
+      previousStep: flowState.step,
+    };
+  } else {
+    // 選択肢から選んだ場合 → 処方箋画像待ち
+    const pickupTimeText = getPickupTimeText(timeOption);
+    await startPrescriptionMode(userId);
+    
+    const store = flowState.selectedStoreId ? getStoreById(flowState.selectedStoreId) : null;
+    replyMessages = [createPrescriptionImageRequestMessage(store, pickupTimeText, flowState.deliveryMethod)];
+    newState = {
+      ...flowState,
+      step: FLOW_STEPS.WAITING_PRESCRIPTION,
+      pickupTime: timeOption,
+      pickupTimeText: pickupTimeText,
+      previousStep: flowState.step,
+    };
+  }
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 位置情報受信時の処理（処方箋フロー用）
+ */
+async function handlePrescriptionFlowLocation(props, latitude, longitude) {
+  const { userId } = props;
+  
+  const flowState = await getFlowState(userId);
+  
+  if (flowState.step !== FLOW_STEPS.WAITING_LOCATION) {
+    return null; // フローの状態が位置情報待ちでない場合は処理しない
+  }
+
+  // 最寄り5店舗を取得
+  const nearestStores = getNearestStores(latitude, longitude, 5);
+  
+  const replyMessages = [createStoreSelectionMessage(nearestStores, 'location')];
+  const newState = {
+    ...flowState,
+    step: FLOW_STEPS.SELECT_STORE,
+    previousStep: flowState.step,
+  };
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * 住所入力時の処理（処方箋フロー用）
+ */
+async function handlePrescriptionFlowAddressInput(props, address) {
+  const { userId } = props;
+  
+  const flowState = await getFlowState(userId);
+  
+  if (flowState.step !== FLOW_STEPS.WAITING_ADDRESS) {
+    return null; // フローの状態が住所入力待ちでない場合は処理しない
+  }
+
+  // 住所から店舗を検索
+  const stores = await searchStoresByAddress(address);
+  
+  if (stores.length === 0) {
+    const replyMessages = [
+      {
+        type: 'text',
+        text: '入力された住所の近くに店舗が見つかりませんでした。\n住所を確認して再度入力するか、別の方法で店舗を探してください。',
+      },
+      createAddressInputMessage(),
+    ];
+    return await commonAction(props, replyMessages);
+  }
+
+  const replyMessages = [createStoreSelectionMessage(stores, 'address')];
+  const newState = {
+    ...flowState,
+    step: FLOW_STEPS.SELECT_STORE,
+    previousStep: flowState.step,
+  };
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
+}
+
+/**
+ * カスタム日時入力の処理
+ */
+async function handleCustomPickupTimeInput(props, timeText) {
+  const { userId } = props;
+  
+  const flowState = await getFlowState(userId);
+  
+  if (flowState.step !== FLOW_STEPS.INPUT_PICKUP_TIME || flowState.pickupTime !== 'custom') {
+    return null;
+  }
+
+  // 処方箋モードを開始
+  await startPrescriptionMode(userId);
+  
+  const store = flowState.selectedStoreId ? getStoreById(flowState.selectedStoreId) : null;
+  const replyMessages = [createPrescriptionImageRequestMessage(store, timeText, flowState.deliveryMethod)];
+  const newState = {
+    ...flowState,
+    step: FLOW_STEPS.WAITING_PRESCRIPTION,
+    pickupTimeText: timeText,
+    previousStep: flowState.step,
+  };
+
+  await saveFlowState(userId, newState);
+  return await commonAction(props, replyMessages);
 }
 
 module.exports = {
@@ -1101,5 +1532,13 @@ module.exports = {
   showLuckyFoodFortuneAction,
   startChatWithGackyAction,
   showPrescriptionGuideAction,
-  keywordPrescription
+  keywordPrescription,
+  // 新しい処方箋フロー用
+  handlePrescriptionFlowPostback,
+  handlePrescriptionFlowLocation,
+  handlePrescriptionFlowAddressInput,
+  handleCustomPickupTimeInput,
+  // フローステップ定数
+  FLOW_STEPS,
+  POSTBACK_PREFIX,
 }

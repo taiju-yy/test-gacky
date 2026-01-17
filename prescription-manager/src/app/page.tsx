@@ -5,7 +5,7 @@ import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
-import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage } from '@/types/prescription';
+import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
 
 // セッションタイムアウト時間（分）- Lambda側と同じ値
 const SESSION_TIMEOUT_MINUTES = 30;
@@ -526,6 +526,63 @@ export default function Dashboard() {
     }
   };
 
+  // 受け取り方法変更ハンドラ
+  const handleDeliveryMethodChange = async (receptionId: string, deliveryMethod: DeliveryMethod, notifyCustomer: boolean) => {
+    const reception = receptions.find((r) => r.receptionId === receptionId);
+    if (!reception) return;
+
+    // 楽観的更新
+    setReceptions((prev) =>
+      prev.map((r) =>
+        r.receptionId === receptionId
+          ? {
+              ...r,
+              deliveryMethod,
+            }
+          : r
+      )
+    );
+
+    if (selectedReception?.receptionId === receptionId) {
+      setSelectedReception((prev) =>
+        prev
+          ? {
+              ...prev,
+              deliveryMethod,
+            }
+          : null
+      );
+    }
+
+    // API呼び出し
+    try {
+      const response = await fetch(`/api/receptions/${receptionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateDeliveryMethod',
+          timestamp: reception.timestamp,
+          userId: reception.userId,
+          deliveryMethod,
+          notifyCustomer,
+          changedBy: 'staff',
+          // 自宅受け取りの場合は店舗情報をクリア
+          clearStore: deliveryMethod === 'home',
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Failed to update delivery method:', data.error);
+        // エラー時はリフェッチ
+        fetchReceptions();
+      }
+    } catch (err) {
+      console.error('Error updating delivery method:', err);
+      fetchReceptions();
+    }
+  };
+
   // ローディング表示
   if (isLoading) {
     return (
@@ -622,6 +679,7 @@ export default function Dashboard() {
                 onStoreAssign={handleStoreAssign}
                 onSendMessage={handleSendMessage}
                 onReactivateSession={handleReactivateSession}
+                onDeliveryMethodChange={handleDeliveryMethodChange}
                 onClose={() => setSelectedReception(null)}
               />
             ) : (

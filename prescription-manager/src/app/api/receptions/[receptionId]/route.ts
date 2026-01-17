@@ -206,6 +206,43 @@ export async function PATCH(
         }
         break;
 
+      case 'updateDeliveryMethod':
+        // 受け取り方法の変更（店舗受取り ⇔ 自宅受取り）
+        updateExpression += ', deliveryMethod = :deliveryMethod, deliveryMethodChangedAt = :changedAt, deliveryMethodChangedBy = :changedBy';
+        expressionAttributeValues[':deliveryMethod'] = data.deliveryMethod;
+        expressionAttributeValues[':changedAt'] = new Date().toISOString();
+        expressionAttributeValues[':changedBy'] = data.changedBy || 'staff'; // 'staff' | 'admin'
+        
+        // 自宅受取りに変更された場合、店舗情報をクリア（オプション）
+        if (data.deliveryMethod === 'home' && data.clearStore) {
+          updateExpression += ', selectedStoreId = :nullStoreId, selectedStoreName = :nullStoreName';
+          expressionAttributeValues[':nullStoreId'] = null;
+          expressionAttributeValues[':nullStoreName'] = null;
+        }
+        
+        // 店舗受取りに変更された場合、店舗を設定（オプション）
+        if (data.deliveryMethod === 'store' && data.storeId && data.storeName) {
+          updateExpression += ', selectedStoreId = :newStoreId, selectedStoreName = :newStoreName';
+          expressionAttributeValues[':newStoreId'] = data.storeId;
+          expressionAttributeValues[':newStoreName'] = data.storeName;
+        }
+        
+        // お客様に変更を通知（オプション）
+        if (data.notifyCustomer && data.userId) {
+          let message;
+          if (data.deliveryMethod === 'home') {
+            message = '【お知らせ】\n\nお薬の受け取り方法が「自宅受け取り（オンライン服薬指導）」に変更されました。\n\n担当者からご連絡いたしますので、しばらくお待ちください。';
+          } else {
+            const storeName = data.storeName || '指定店舗';
+            message = `【お知らせ】\n\nお薬の受け取り方法が「店舗受け取り」に変更されました。\n\n受取店舗: あおぞら薬局 ${storeName}\n\nお薬の準備ができ次第ご連絡いたします。`;
+          }
+          const sent = await sendTextMessage(data.userId, message);
+          console.log(`Delivery method change notification sent to ${data.userId}: ${sent}`);
+        }
+        
+        console.log(`Delivery method changed to ${data.deliveryMethod} for reception ${receptionId}`);
+        break;
+
       default:
         return NextResponse.json(
           { success: false, error: 'Invalid action' },
