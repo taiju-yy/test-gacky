@@ -143,12 +143,25 @@ export default function ReceptionDetail({
     }
   };
 
-  // reception変更時にstateを更新
+  // reception変更時またはstoresロード時にstateを更新
   useEffect(() => {
     // 店舗ID: 管理者が割り当てた店舗ID > お客様選択店舗ID > 店舗名から逆引き
+    const resolvedStoreId = getStoreIdByName(reception.selectedStoreName);
     const newStoreId = reception.selectedStoreId || 
                        reception.preferredStoreId || 
-                       getStoreIdByName(reception.selectedStoreName);
+                       resolvedStoreId;
+    
+    // デバッグログ（本番では削除）
+    console.log('[ReceptionDetail] Store selection debug:', {
+      selectedStoreId: reception.selectedStoreId,
+      preferredStoreId: reception.preferredStoreId,
+      selectedStoreName: reception.selectedStoreName,
+      resolvedStoreId,
+      newStoreId,
+      storesCount: stores.length,
+      storeNames: stores.slice(0, 5).map(s => s.storeName),
+    });
+    
     setSelectedStoreId(newStoreId);
     setStaffNote(reception.staffNote || '');
   }, [reception.receptionId, reception.selectedStoreId, reception.preferredStoreId, reception.selectedStoreName, reception.staffNote, stores]);
