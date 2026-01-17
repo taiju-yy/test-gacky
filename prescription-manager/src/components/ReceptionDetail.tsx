@@ -438,12 +438,6 @@ export default function ReceptionDetail({
               {(reception.selectedStoreId || reception.preferredStoreId) && (
                 <p className="mt-1 text-xs text-gray-500">
                   現在の割当: {formatStoreName(reception.selectedStoreName || stores.find(s => s.storeId === reception.preferredStoreId)?.storeName || '')}
-                  {/* 管理者がお客様の希望店舗から変更した場合のみ表示 */}
-                  {reception.preferredStoreId && reception.selectedStoreId && reception.preferredStoreId !== reception.selectedStoreId && (
-                    <span className="ml-2 text-orange-600">
-                      （お客様希望から変更済み）
-                    </span>
-                  )}
                 </p>
               )}
               {selectedStoreId && selectedStoreId !== reception.selectedStoreId && (

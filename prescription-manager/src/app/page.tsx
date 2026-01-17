@@ -335,6 +335,9 @@ export default function Dashboard() {
           timestamp: reception.timestamp,
           storeId,
           storeName: store.storeName,
+          // 店舗変更通知用の情報
+          userId: reception.userId,
+          preferredStoreId: reception.preferredStoreId,
         }),
       });
     } catch (err) {
