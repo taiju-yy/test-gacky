@@ -17,7 +17,8 @@ const {
   updatePolitenessTone,
   updateAttitudeTone,
   updateUserActivitySummary,
-  updateNickname
+  updateNickname,
+  checkAndRecordBroadcastResponse
 } = require('./dynamoDBManager');
 const {
   prescriptionFlow,
@@ -473,7 +474,15 @@ function sanitizeResponse(responseText) {
 async function defaultAction(props) {
   const { context, parsedBody, userId, messageType, text, userProfile } = props;
   // 会話履歴の取得
-  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName, nickname } = await getMessages(userId);
+  let { messages, lastInteractionDate, responseTone, relationshipTone, coachingStyle, politenessTone, attitudeTone, displayName, nickname, timestamp, lastBroadcastAt, respondedToBroadcast } = await getMessages(userId);
+  
+  // 応答率計算: ブロードキャスト配信への反応を記録（24時間以内の場合）
+  if (lastBroadcastAt && !respondedToBroadcast && timestamp) {
+    const responseResult = await checkAndRecordBroadcastResponse(userId, timestamp, lastBroadcastAt, respondedToBroadcast);
+    if (responseResult.recorded) {
+      console.log(`ブロードキャスト反応記録: userId=${userId}, 配信から${responseResult.hoursSinceBroadcast}時間後`);
+    }
+  }
   
   // displayName の決定（LINEプロフィールから取得した最新の名前、またはDBに保存されている名前）
   const currentDisplayName = userProfile?.displayName || displayName || null;
