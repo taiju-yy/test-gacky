@@ -64,18 +64,76 @@ export default function VideoCallPage() {
   // ローカルメディアストリームを取得
   const getLocalStream = async () => {
     try {
+      // まずデバイスが利用可能かチェック
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hasVideo = devices.some(device => device.kind === 'videoinput');
+      const hasAudio = devices.some(device => device.kind === 'audioinput');
+      
+      console.log('[VideoCall] Available devices:', {
+        video: hasVideo,
+        audio: hasAudio,
+        devices: devices.map(d => ({ kind: d.kind, label: d.label || '(ラベルなし)' }))
+      });
+
+      if (!hasVideo && !hasAudio) {
+        setError('カメラとマイクが見つかりません。デバイスが正しく接続されているか確認してください。');
+        setConnectionStatus('error');
+        return null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: hasVideo,
+        audio: hasAudio,
       });
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
+      console.log('[VideoCall] Media stream obtained successfully');
       return stream;
-    } catch (err) {
-      console.error('Error accessing media devices:', err);
-      setError('カメラとマイクへのアクセスが拒否されました。ブラウザの設定を確認してください。');
+    } catch (err: unknown) {
+      console.error('[VideoCall] Error accessing media devices:', err);
+      
+      // エラーの種類に応じて詳細なメッセージを表示
+      let errorMessage = 'カメラとマイクへのアクセスに失敗しました。';
+      
+      if (err instanceof Error) {
+        const errorName = err.name;
+        console.error('[VideoCall] Error name:', errorName, 'Message:', err.message);
+        
+        switch (errorName) {
+          case 'NotAllowedError':
+          case 'PermissionDeniedError':
+            errorMessage = 'カメラとマイクの使用が許可されていません。\n\n' +
+              '【確認事項】\n' +
+              '1. ブラウザのアドレスバー左のカメラアイコンをクリックして許可してください\n' +
+              '2. Windowsの場合: 設定 → プライバシー → カメラ/マイク で許可されているか確認\n' +
+              '3. 他のアプリ（Zoom、Teams等）がカメラを使用していないか確認';
+            break;
+          case 'NotFoundError':
+          case 'DevicesNotFoundError':
+            errorMessage = 'カメラまたはマイクが見つかりません。デバイスが正しく接続されているか確認してください。';
+            break;
+          case 'NotReadableError':
+          case 'TrackStartError':
+            errorMessage = 'カメラまたはマイクにアクセスできません。\n\n' +
+              '【考えられる原因】\n' +
+              '・他のアプリケーション（Zoom、Teams、Skype等）がカメラを使用中\n' +
+              '・デバイスドライバーの問題\n\n' +
+              '他のビデオ通話アプリを終了してから再度お試しください。';
+            break;
+          case 'OverconstrainedError':
+            errorMessage = 'カメラの設定に問題があります。別のカメラをお試しください。';
+            break;
+          case 'SecurityError':
+            errorMessage = 'セキュリティエラーが発生しました。HTTPSで接続しているか確認してください。';
+            break;
+          default:
+            errorMessage = `カメラとマイクへのアクセスに失敗しました。\n\nエラー: ${errorName}\n${err.message}`;
+        }
+      }
+      
+      setError(errorMessage);
       setConnectionStatus('error');
       return null;
     }
@@ -396,20 +454,30 @@ export default function VideoCallPage() {
         {/* エラー表示 */}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-            <div className="text-center p-8">
+            <div className="text-center p-8 max-w-md">
               <div className="w-16 h-16 mx-auto mb-4 bg-red-500 rounded-full flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h2 className="text-white text-xl font-semibold mb-2">エラーが発生しました</h2>
-              <p className="text-gray-400 mb-6">{error}</p>
-              <button
-                onClick={() => window.close()}
-                className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-              >
-                閉じる
-              </button>
+              <h2 className="text-white text-xl font-semibold mb-4">エラーが発生しました</h2>
+              <div className="text-gray-400 mb-6 text-left whitespace-pre-line bg-gray-800 p-4 rounded-lg text-sm">
+                {error}
+              </div>
+              <div className="flex justify-center space-x-3">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-2 bg-gacky-green text-white rounded-lg hover:bg-green-600"
+                >
+                  再試行
+                </button>
+                <button
+                  onClick={() => window.close()}
+                  className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
           </div>
         )}
