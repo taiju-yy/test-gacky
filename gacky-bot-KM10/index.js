@@ -357,6 +357,78 @@ async function defaultHandler(event, context) {
             }
 
             // ========================================
+            // 処方箋フロー進行中のAI応答スキップ
+            // フローがIDLE以外の場合、AI応答を停止してユーザーにボタン操作を促す
+            // ========================================
+            {
+              const flowState = await getFlowState(userId);
+              if (flowState.step && flowState.step !== FLOW_STEPS.IDLE) {
+                console.log(`Prescription flow in progress for user ${userId}, step: ${flowState.step}, skipping AI response`);
+                
+                // テキストメッセージで「処方箋を送る」が入力された場合は、フローを最初からやり直し
+                if (messageType === 'text' && text === keywordPrescription) {
+                  // フローを最初からやり直す
+                  // showPrescriptionGuideAction に処理を委ねる
+                } else {
+                  // フロー中の他のテキストメッセージにはAI応答をスキップ
+                  const replyToken = parsedBody.events[0].replyToken;
+                  await client.replyMessage({
+                    replyToken,
+                    messages: [{
+                      type: 'flex',
+                      altText: '処方箋受付の操作をお願いします',
+                      contents: {
+                        type: 'bubble',
+                        body: {
+                          type: 'box',
+                          layout: 'vertical',
+                          contents: [
+                            {
+                              type: 'text',
+                              text: '📋 処方箋受付中',
+                              weight: 'bold',
+                              size: 'md',
+                              align: 'center',
+                            },
+                            {
+                              type: 'separator',
+                              margin: 'lg',
+                            },
+                            {
+                              type: 'text',
+                              text: '現在、処方箋受付の手続き中です。\n上のボタンから操作を続けてください。',
+                              size: 'sm',
+                              color: '#666666',
+                              wrap: true,
+                              margin: 'lg',
+                              align: 'center',
+                            },
+                            {
+                              type: 'text',
+                              text: '処方箋を送るのをやめる場合は「やめる」ボタンを押してください。',
+                              size: 'xs',
+                              color: '#888888',
+                              wrap: true,
+                              margin: 'md',
+                              align: 'center',
+                            },
+                          ],
+                          paddingAll: '20px',
+                        },
+                      },
+                    }]
+                  });
+
+                  return {
+                    statusCode: 200,
+                    headers: { "x-line-status": "OK" },
+                    body: '{"result":"prescription_flow_in_progress"}',
+                  };
+                }
+              }
+            }
+
+            // ========================================
             // 処方箋送付案内
             // ========================================
             if (messageType === 'text' && text === keywordPrescription) {

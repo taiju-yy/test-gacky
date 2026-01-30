@@ -1084,6 +1084,11 @@ async function handlePrescriptionFlowPostback(props, postbackData) {
     return await commonAction(props, replyMessages);
   }
 
+  // 処方箋を送るのをやめる（キャンセル）
+  if (postbackData === POSTBACK_PREFIX.CANCEL) {
+    return await handleCancelAction(props);
+  }
+
   // 戻るボタン
   if (postbackData === POSTBACK_PREFIX.BACK) {
     return await handleBackAction(props, flowState);
@@ -1218,6 +1223,80 @@ async function handleBackAction(props, flowState) {
 }
 
 /**
+ * 処方箋を送るのをやめる（キャンセル）の処理
+ * フローを完全にリセットし、AI応答を再開する
+ */
+async function handleCancelAction(props) {
+  const { userId } = props;
+
+  // フローをリセット
+  await resetFlowState(userId);
+
+  // キャンセル完了メッセージを送信
+  const replyMessages = [
+    {
+      type: 'flex',
+      altText: '処方箋送信をキャンセルしました',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '👋',
+              size: '3xl',
+              align: 'center',
+            },
+          ],
+          paddingAll: '20px',
+          backgroundColor: '#F5F5F5',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '処方箋送信をキャンセルしました',
+              weight: 'bold',
+              size: 'md',
+              align: 'center',
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: 'またいつでも「処方箋を送る」からお薬の受付ができます。',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'lg',
+              align: 'center',
+            },
+            {
+              type: 'text',
+              text: '何か他にご質問があれば、お気軽にメッセージを送ってくださいね！',
+              size: 'sm',
+              color: '#666666',
+              wrap: true,
+              margin: 'md',
+              align: 'center',
+            },
+          ],
+          paddingAll: '20px',
+        },
+      },
+    },
+  ];
+
+  return await commonAction(props, replyMessages);
+}
+
+/**
  * 受け取り方法選択の処理
  */
 async function handleDeliveryMethodSelection(props, method, flowState) {
@@ -1285,7 +1364,8 @@ async function handleStoreSearchMethodSelection(props, searchMethod, flowState) 
 
     case 'location':
       // 現在地から探す
-      replyMessages = [createLocationRequestMessage()];
+      // createLocationRequestMessage()は配列を返す
+      replyMessages = createLocationRequestMessage();
       newState = {
         ...flowState,
         step: FLOW_STEPS.WAITING_LOCATION,
