@@ -30,6 +30,10 @@ const TABLE_CUSTOMER_SESSIONS = process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-pr
 const TABLE_PRESCRIPTIONS = process.env.TABLE_PRESCRIPTIONS || 'gacky-prescription-prescriptions-dev';
 const TABLE_CUSTOMER_PROFILES = process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev';
 
+// 処方箋フローのタイムアウト（分）
+// 「処方箋を送る」トリガーから30分以内に受付完了しない場合、自動的にAI応答停止状態を解除
+const PRESCRIPTION_FLOW_TIMEOUT_MINUTES = 30;
+
 // フローのステップ定義
 const FLOW_STEPS = {
   IDLE: 'idle',                                // 待機中
@@ -1271,6 +1275,7 @@ async function saveFlowState(userId, flowState) {
 
 /**
  * フローの状態を取得
+ * タイムアウトチェック付き：30分以上経過している場合は自動的にIDLEにリセット
  */
 async function getFlowState(userId) {
   try {
@@ -1290,7 +1295,37 @@ async function getFlowState(userId) {
       };
     }
 
-    return result.Item.prescriptionFlowState;
+    const flowState = result.Item.prescriptionFlowState;
+    const updatedAt = result.Item.prescriptionFlowUpdatedAt;
+
+    // タイムアウトチェック：IDLE以外のステップで、30分以上経過している場合はリセット
+    if (flowState.step && flowState.step !== FLOW_STEPS.IDLE && updatedAt) {
+      const lastUpdatedTime = new Date(updatedAt).getTime();
+      const now = Date.now();
+      const elapsedMinutes = (now - lastUpdatedTime) / (1000 * 60);
+
+      if (elapsedMinutes >= PRESCRIPTION_FLOW_TIMEOUT_MINUTES) {
+        console.log(`Prescription flow timeout for user ${userId}: ${elapsedMinutes.toFixed(1)} minutes elapsed (threshold: ${PRESCRIPTION_FLOW_TIMEOUT_MINUTES} min)`);
+        
+        // フローをリセット（非同期で実行、結果は待たない）
+        resetFlowState(userId).catch(err => {
+          console.error('Error resetting timed out flow state:', err);
+        });
+
+        // IDLE状態を返す
+        return {
+          step: FLOW_STEPS.IDLE,
+          deliveryMethod: null,
+          selectedStoreId: null,
+          pickupTime: null,
+          pickupTimeText: null,
+          previousStep: null,
+          timedOut: true, // タイムアウトしたことを示すフラグ
+        };
+      }
+    }
+
+    return flowState;
   } catch (error) {
     console.error('Error getting flow state:', error);
     return {
@@ -1415,6 +1450,7 @@ module.exports = {
   FLOW_STEPS,
   POSTBACK_PREFIX,
   DELIVERY_METHODS,
+  PRESCRIPTION_FLOW_TIMEOUT_MINUTES,
   
   // メッセージ生成関数
   createDeliveryMethodSelectionMessage,
