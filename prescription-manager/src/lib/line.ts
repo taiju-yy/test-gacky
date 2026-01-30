@@ -87,7 +87,7 @@ export async function sendTextMessage(userId: string, text: string): Promise<boo
  * 準備完了通知を送信（店舗受け取り用）
  */
 export async function sendReadyNotification(userId: string, storeName: string): Promise<boolean> {
-  const message = `【準備完了のお知らせ】\n\n${storeName}にて、お薬の準備が整いました。\n\nご都合のよろしい時間にご来局ください。\n\nご不明な点がございましたら、こちらにメッセージをお送りください。`;
+  const message = `【準備完了のお知らせ】\n\n${storeName}にて、お薬の準備が整いました。\n\nご都合のよろしい時間にご来局ください。`;
   
   return pushMessage({
     to: userId,
