@@ -30,6 +30,10 @@ const TABLE_CUSTOMER_SESSIONS = process.env.TABLE_CUSTOMER_SESSIONS || 'gacky-pr
 const TABLE_PRESCRIPTIONS = process.env.TABLE_PRESCRIPTIONS || 'gacky-prescription-prescriptions-dev';
 const TABLE_CUSTOMER_PROFILES = process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev';
 
+// 処方箋フローのタイムアウト（分）
+// 「処方箋を送る」トリガーから30分以内に受付完了しない場合、自動的にAI応答停止状態を解除
+const PRESCRIPTION_FLOW_TIMEOUT_MINUTES = 30;
+
 // フローのステップ定義
 const FLOW_STEPS = {
   IDLE: 'idle',                                // 待機中
@@ -52,6 +56,7 @@ const POSTBACK_PREFIX = {
   PICKUP_TIME: 'rx_pickup_time:',       // rx_pickup_time:{option}
   RESTART: 'rx_restart',                // やり直し
   BACK: 'rx_back',                      // 戻る
+  CANCEL: 'rx_cancel',                  // 処方箋を送るのをやめる
 };
 
 // 受け取り方法
@@ -62,6 +67,7 @@ const DELIVERY_METHODS = {
 
 /**
  * 受け取り方法選択メッセージを生成（店舗 or 自宅）
+ * ボタンUIで表示（クイックリプライから変更）
  */
 function createDeliveryMethodSelectionMessage() {
   return {
@@ -95,28 +101,46 @@ function createDeliveryMethodSelectionMessage() {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🏪 店舗で受け取る',
-            data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
-            displayText: '店舗で受け取る',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#4CAF50',
+            action: {
+              type: 'postback',
+              label: '🏪 店舗で受け取る',
+              data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
+              displayText: '店舗で受け取る',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🏠 自宅で受け取る',
-            data: `${POSTBACK_PREFIX.DELIVERY_METHOD}home`,
-            displayText: '自宅で受け取る',
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#2196F3',
+            action: {
+              type: 'postback',
+              label: '🏠 自宅で受け取る',
+              data: `${POSTBACK_PREFIX.DELIVERY_METHOD}home`,
+              displayText: '自宅で受け取る',
+            },
           },
-        },
-      ],
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
+          },
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
@@ -124,6 +148,7 @@ function createDeliveryMethodSelectionMessage() {
 /**
  * 自宅受け取り選択時の確認メッセージ
  * 「最短で翌日以降」の注記付き
+ * ボタンUIで表示（クイックリプライから変更）
  */
 function createHomeDeliveryConfirmMessage() {
   return {
@@ -204,52 +229,73 @@ function createHomeDeliveryConfirmMessage() {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '✅ 自宅受け取りで進める',
-            data: `${POSTBACK_PREFIX.CONFIRM_STORE}home_confirmed`,
-            displayText: '自宅受け取りで進めます',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#4CAF50',
+            action: {
+              type: 'postback',
+              label: '✅ 自宅受け取りで進める',
+              data: `${POSTBACK_PREFIX.CONFIRM_STORE}home_confirmed`,
+              displayText: '自宅受け取りで進めます',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🏪 店舗受け取りに変更',
-            data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
-            displayText: '店舗で受け取るに変更します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🏪 店舗受け取りに変更',
+              data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
+              displayText: '店舗で受け取るに変更します',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔄 最初からやり直す',
-            data: POSTBACK_PREFIX.RESTART,
-            displayText: '最初からやり直します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🔙 戻る',
+              data: POSTBACK_PREFIX.BACK,
+              displayText: '戻ります',
+            },
           },
-        },
-      ],
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
+          },
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
  * 店舗検索方法選択メッセージを生成
+ * ボタンUIで表示（クイックリプライから変更）
  * @param {boolean} hasHistory - 履歴があるかどうか
  */
 function createStoreSearchMethodMessage(hasHistory = false) {
-  const quickReplyItems = [];
+  const footerContents = [];
 
   // 履歴がある場合のみ「履歴から」を表示
   if (hasHistory) {
-    quickReplyItems.push({
-      type: 'action',
+    footerContents.push({
+      type: 'button',
+      style: 'primary',
+      color: '#FF9800',
       action: {
         type: 'postback',
         label: '📋 履歴から選ぶ',
@@ -259,9 +305,11 @@ function createStoreSearchMethodMessage(hasHistory = false) {
     });
   }
 
-  quickReplyItems.push(
+  footerContents.push(
     {
-      type: 'action',
+      type: 'button',
+      style: 'primary',
+      color: '#4CAF50',
       action: {
         type: 'postback',
         label: '📍 現在地から探す',
@@ -270,7 +318,9 @@ function createStoreSearchMethodMessage(hasHistory = false) {
       },
     },
     {
-      type: 'action',
+      type: 'button',
+      style: 'primary',
+      color: '#2196F3',
       action: {
         type: 'postback',
         label: '🏠 住所を入力する',
@@ -279,12 +329,23 @@ function createStoreSearchMethodMessage(hasHistory = false) {
       },
     },
     {
-      type: 'action',
+      type: 'button',
+      style: 'secondary',
       action: {
         type: 'postback',
-        label: '🔄 受取方法を変更',
+        label: '🔙 戻る',
         data: POSTBACK_PREFIX.BACK,
-        displayText: '受け取り方法を変更します',
+        displayText: '戻ります',
+      },
+    },
+    {
+      type: 'button',
+      style: 'secondary',
+      action: {
+        type: 'postback',
+        label: '❌ やめる',
+        data: POSTBACK_PREFIX.CANCEL,
+        displayText: '処方箋を送るのをやめます',
       },
     }
   );
@@ -320,46 +381,107 @@ function createStoreSearchMethodMessage(hasHistory = false) {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: quickReplyItems,
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: footerContents,
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
  * 位置情報送信を促すメッセージ
+ * ボタンUIで表示（クイックリプライから変更）
+ * ※ 位置情報送信ボタンはLINEの仕様上、クイックリプライでのみ動作するため、
+ *   位置情報送信のみクイックリプライを残し、他のボタンはFlex Messageで表示
  */
 function createLocationRequestMessage() {
-  return {
-    type: 'text',
-    text: '📍 現在地を共有してください\n\n下のボタンから位置情報を送信すると、最寄りのあおぞら薬局を5件まで表示します。',
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          imageUrl: 'https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/fm_image_location_wh_fixed1.png',
-          action: {
-            type: 'location',
-            label: '現在地を共有する',
-          },
+  return [
+    {
+      type: 'flex',
+      altText: '現在地を共有してください',
+      contents: {
+        type: 'bubble',
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '📍 現在地を共有',
+              weight: 'bold',
+              size: 'lg',
+              align: 'center',
+            },
+            {
+              type: 'separator',
+              margin: 'lg',
+            },
+            {
+              type: 'text',
+              text: '下の「現在地を送る」ボタンから位置情報を送信すると、最寄りのあおぞら薬局を5件まで表示します。',
+              size: 'sm',
+              wrap: true,
+              margin: 'lg',
+            },
+          ],
+          paddingAll: '20px',
         },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔙 戻る',
-            data: POSTBACK_PREFIX.BACK,
-            displayText: '戻ります',
-          },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'button',
+              style: 'secondary',
+              action: {
+                type: 'postback',
+                label: '🔙 戻る',
+                data: POSTBACK_PREFIX.BACK,
+                displayText: '戻ります',
+              },
+            },
+            {
+              type: 'button',
+              style: 'secondary',
+              action: {
+                type: 'postback',
+                label: '❌ やめる',
+                data: POSTBACK_PREFIX.CANCEL,
+                displayText: '処方箋を送るのをやめます',
+              },
+            },
+          ],
+          paddingAll: '10px',
         },
-      ],
+      },
     },
-  };
+    {
+      type: 'text',
+      text: '👇 下のボタンをタップして現在地を送ってね',
+      quickReply: {
+        items: [
+          {
+            type: 'action',
+            imageUrl: 'https://res-gacky-bot.s3.ap-northeast-1.amazonaws.com/fm_image_location_wh_fixed1.png',
+            action: {
+              type: 'location',
+              label: '📍 現在地を送る',
+            },
+          },
+        ],
+      },
+    },
+  ];
 }
 
 /**
  * 住所入力を促すメッセージ
+ * ボタンUIで表示（クイックリプライから変更）
  */
 function createAddressInputMessage() {
   return {
@@ -423,34 +545,41 @@ function createAddressInputMessage() {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔙 戻る',
-            data: POSTBACK_PREFIX.BACK,
-            displayText: '戻ります',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🔙 戻る',
+              data: POSTBACK_PREFIX.BACK,
+              displayText: '戻ります',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔄 最初からやり直す',
-            data: POSTBACK_PREFIX.RESTART,
-            displayText: '最初からやり直します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
           },
-        },
-      ],
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
- * 店舗選択用のクイックリプライを生成
+ * 店舗選択用のメッセージを生成
+ * ボタンUIで表示（クイックリプライから変更）
  * @param {Array} stores - 店舗リスト（距離付きの場合あり）
  * @param {string} source - 選択元 ('history'|'location'|'address')
  */
@@ -469,7 +598,8 @@ function createStoreSelectionMessage(stores, source = 'location') {
     descText = '入力された住所から近い店舗です';
   }
 
-  const quickReplyItems = stores.slice(0, 10).map((store) => {
+  // 店舗ボタンを生成（最大10件）
+  const storeButtons = stores.slice(0, 10).map((store) => {
     let label = store.storeName;
     if (store.distance !== undefined) {
       const distanceText = store.distance < 1 
@@ -477,13 +607,15 @@ function createStoreSelectionMessage(stores, source = 'location') {
         : `${store.distance.toFixed(1)}km`;
       label = `${store.storeName} (${distanceText})`;
     }
-    // ラベルは最大20文字
-    if (label.length > 20) {
-      label = label.substring(0, 17) + '...';
+    // ラベルは最大40文字（Flex Messageボタン）
+    if (label.length > 40) {
+      label = label.substring(0, 37) + '...';
     }
 
     return {
-      type: 'action',
+      type: 'button',
+      style: 'primary',
+      color: '#4CAF50',
       action: {
         type: 'postback',
         label: label,
@@ -493,16 +625,29 @@ function createStoreSelectionMessage(stores, source = 'location') {
     };
   });
 
-  // 戻るボタンを追加
-  quickReplyItems.push({
-    type: 'action',
-    action: {
-      type: 'postback',
-      label: '🔙 戻る',
-      data: POSTBACK_PREFIX.BACK,
-      displayText: '戻ります',
+  // ナビゲーションボタンを追加
+  const navButtons = [
+    {
+      type: 'button',
+      style: 'secondary',
+      action: {
+        type: 'postback',
+        label: '🔙 戻る',
+        data: POSTBACK_PREFIX.BACK,
+        displayText: '戻ります',
+      },
     },
-  });
+    {
+      type: 'button',
+      style: 'secondary',
+      action: {
+        type: 'postback',
+        label: '❌ やめる',
+        data: POSTBACK_PREFIX.CANCEL,
+        displayText: '処方箋を送るのをやめます',
+      },
+    },
+  ];
 
   return {
     type: 'flex',
@@ -536,19 +681,24 @@ function createStoreSelectionMessage(stores, source = 'location') {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: quickReplyItems,
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [...storeButtons, ...navButtons],
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
  * 店舗確認メッセージを生成
+ * ボタンUIで表示（クイックリプライから変更）
  * @param {Object} store - 店舗情報
  */
 function createStoreConfirmationMessage(store) {
-  const contents = [
+  const bodyContents = [
     {
       type: 'text',
       text: '✅ 店舗を確認',
@@ -588,7 +738,7 @@ function createStoreConfirmationMessage(store) {
 
   // 店舗特有の注記がある場合
   if (store.storeNote) {
-    contents.push({
+    bodyContents.push({
       type: 'box',
       layout: 'vertical',
       contents: [
@@ -615,7 +765,7 @@ function createStoreConfirmationMessage(store) {
     });
   }
 
-  contents.push({
+  bodyContents.push({
     type: 'text',
     text: 'こちらの店舗でよろしいですか？',
     size: 'sm',
@@ -631,46 +781,55 @@ function createStoreConfirmationMessage(store) {
       body: {
         type: 'box',
         layout: 'vertical',
-        contents: contents,
+        contents: bodyContents,
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '✅ この店舗で進める',
-            data: `${POSTBACK_PREFIX.CONFIRM_STORE}yes`,
-            displayText: 'この店舗で進めます',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#4CAF50',
+            action: {
+              type: 'postback',
+              label: '✅ この店舗で進める',
+              data: `${POSTBACK_PREFIX.CONFIRM_STORE}yes`,
+              displayText: 'この店舗で進めます',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔙 店舗を選び直す',
-            data: `${POSTBACK_PREFIX.CONFIRM_STORE}no`,
-            displayText: '店舗を選び直します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🔙 店舗を選び直す',
+              data: `${POSTBACK_PREFIX.CONFIRM_STORE}no`,
+              displayText: '店舗を選び直します',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔄 最初からやり直す',
-            data: POSTBACK_PREFIX.RESTART,
-            displayText: '最初からやり直します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
           },
-        },
-      ],
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
  * 希望受け取り時間入力メッセージを生成
+ * ボタンUIで表示（クイックリプライから変更）
  */
 function createPickupTimeInputMessage() {
   // 現在時刻を基準に選択肢を生成
@@ -679,15 +838,16 @@ function createPickupTimeInputMessage() {
   const jstNow = new Date(now.getTime() + (jstOffset + now.getTimezoneOffset()) * 60 * 1000);
   
   const hour = jstNow.getHours();
-  const minute = jstNow.getMinutes();
   
-  const quickReplyItems = [];
+  const footerContents = [];
 
   // 「30分後」「1時間後」「本日中」「明日以降」などの選択肢
   // 営業時間を考慮（9:00-18:00と仮定）
   if (hour >= 9 && hour < 17) {
-    quickReplyItems.push({
-      type: 'action',
+    footerContents.push({
+      type: 'button',
+      style: 'primary',
+      color: '#FF5722',
       action: {
         type: 'postback',
         label: '⏱️ できるだけ早く',
@@ -697,8 +857,10 @@ function createPickupTimeInputMessage() {
     });
     
     if (hour < 16) {
-      quickReplyItems.push({
-        type: 'action',
+      footerContents.push({
+        type: 'button',
+        style: 'primary',
+        color: '#FF9800',
         action: {
           type: 'postback',
           label: '🕐 1時間後',
@@ -708,8 +870,10 @@ function createPickupTimeInputMessage() {
       });
     }
     
-    quickReplyItems.push({
-      type: 'action',
+    footerContents.push({
+      type: 'button',
+      style: 'primary',
+      color: '#4CAF50',
       action: {
         type: 'postback',
         label: '🌅 本日中',
@@ -719,8 +883,10 @@ function createPickupTimeInputMessage() {
     });
   }
 
-  quickReplyItems.push({
-    type: 'action',
+  footerContents.push({
+    type: 'button',
+    style: 'primary',
+    color: '#2196F3',
     action: {
       type: 'postback',
       label: '📅 明日以降',
@@ -729,8 +895,9 @@ function createPickupTimeInputMessage() {
     },
   });
 
-  quickReplyItems.push({
-    type: 'action',
+  footerContents.push({
+    type: 'button',
+    style: 'secondary',
     action: {
       type: 'postback',
       label: '✏️ 日時を入力',
@@ -739,13 +906,25 @@ function createPickupTimeInputMessage() {
     },
   });
 
-  quickReplyItems.push({
-    type: 'action',
+  footerContents.push({
+    type: 'button',
+    style: 'secondary',
     action: {
       type: 'postback',
       label: '🔙 戻る',
       data: POSTBACK_PREFIX.BACK,
       displayText: '戻ります',
+    },
+  });
+
+  footerContents.push({
+    type: 'button',
+    style: 'secondary',
+    action: {
+      type: 'postback',
+      label: '❌ やめる',
+      data: POSTBACK_PREFIX.CANCEL,
+      displayText: '処方箋を送るのをやめます',
     },
   });
 
@@ -789,15 +968,20 @@ function createPickupTimeInputMessage() {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: quickReplyItems,
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: footerContents,
+        paddingAll: '10px',
+      },
     },
   };
 }
 
 /**
  * カスタム日時入力を促すメッセージ
+ * ボタンUIで表示（クイックリプライから変更）
  */
 function createCustomTimeInputMessage() {
   return {
@@ -838,19 +1022,34 @@ function createCustomTimeInputMessage() {
         ],
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔙 戻る',
-            data: POSTBACK_PREFIX.BACK,
-            displayText: '戻ります',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🔙 戻る',
+              data: POSTBACK_PREFIX.BACK,
+              displayText: '戻ります',
+            },
           },
-        },
-      ],
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
+          },
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
@@ -1005,28 +1204,34 @@ function createPrescriptionImageRequestMessage(selectedStore, pickupTime, delive
         contents: bodyContents,
         paddingAll: '20px',
       },
-    },
-    quickReply: {
-      items: [
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔙 戻る',
-            data: POSTBACK_PREFIX.BACK,
-            displayText: '戻ります',
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '🔙 戻る',
+              data: POSTBACK_PREFIX.BACK,
+              displayText: '戻ります',
+            },
           },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '🔄 最初からやり直す',
-            data: POSTBACK_PREFIX.RESTART,
-            displayText: '最初からやり直します',
+          {
+            type: 'button',
+            style: 'secondary',
+            action: {
+              type: 'postback',
+              label: '❌ やめる',
+              data: POSTBACK_PREFIX.CANCEL,
+              displayText: '処方箋を送るのをやめます',
+            },
           },
-        },
-      ],
+        ],
+        paddingAll: '10px',
+      },
     },
   };
 }
@@ -1070,6 +1275,7 @@ async function saveFlowState(userId, flowState) {
 
 /**
  * フローの状態を取得
+ * タイムアウトチェック付き：30分以上経過している場合は自動的にIDLEにリセット
  */
 async function getFlowState(userId) {
   try {
@@ -1089,7 +1295,37 @@ async function getFlowState(userId) {
       };
     }
 
-    return result.Item.prescriptionFlowState;
+    const flowState = result.Item.prescriptionFlowState;
+    const updatedAt = result.Item.prescriptionFlowUpdatedAt;
+
+    // タイムアウトチェック：IDLE以外のステップで、30分以上経過している場合はリセット
+    if (flowState.step && flowState.step !== FLOW_STEPS.IDLE && updatedAt) {
+      const lastUpdatedTime = new Date(updatedAt).getTime();
+      const now = Date.now();
+      const elapsedMinutes = (now - lastUpdatedTime) / (1000 * 60);
+
+      if (elapsedMinutes >= PRESCRIPTION_FLOW_TIMEOUT_MINUTES) {
+        console.log(`Prescription flow timeout for user ${userId}: ${elapsedMinutes.toFixed(1)} minutes elapsed (threshold: ${PRESCRIPTION_FLOW_TIMEOUT_MINUTES} min)`);
+        
+        // フローをリセット（非同期で実行、結果は待たない）
+        resetFlowState(userId).catch(err => {
+          console.error('Error resetting timed out flow state:', err);
+        });
+
+        // IDLE状態を返す
+        return {
+          step: FLOW_STEPS.IDLE,
+          deliveryMethod: null,
+          selectedStoreId: null,
+          pickupTime: null,
+          pickupTimeText: null,
+          previousStep: null,
+          timedOut: true, // タイムアウトしたことを示すフラグ
+        };
+      }
+    }
+
+    return flowState;
   } catch (error) {
     console.error('Error getting flow state:', error);
     return {
@@ -1214,6 +1450,7 @@ module.exports = {
   FLOW_STEPS,
   POSTBACK_PREFIX,
   DELIVERY_METHODS,
+  PRESCRIPTION_FLOW_TIMEOUT_MINUTES,
   
   // メッセージ生成関数
   createDeliveryMethodSelectionMessage,
