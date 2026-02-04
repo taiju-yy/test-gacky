@@ -615,46 +615,13 @@ export default function ReceptionDetail({
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">ステータス変更</h3>
               <div className="space-y-3">
-                {/* 受付待ち → 確認済み（管理者操作） */}
-                {reception.status === 'pending' && (
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => onStatusChange(reception.receptionId, 'confirmed')}
-                      className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={reception.deliveryMethod !== 'home' && !selectedStoreId}
-                    >
-                      ✓ 確認OK・{reception.deliveryMethod === 'home' ? '対応開始' : '店舗に送信'}
-                    </button>
-                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                      <p className="text-xs text-blue-700">
-                        <span className="font-medium">このボタンをクリックすると:</span>
-                      </p>
-                      <ul className="mt-1 text-xs text-blue-600 space-y-1">
-                        <li>• ステータスが「確認済み」に変更されます</li>
-                        {reception.deliveryMethod === 'home' ? (
-                          <li>• オンライン服薬指導の準備を開始します</li>
-                        ) : (
-                          <>
-                            <li>• 選択した店舗に処方箋が割り当てられます</li>
-                            <li>• 店舗スタッフが調剤を開始できるようになります</li>
-                          </>
-                        )}
-                      </ul>
-                      {reception.deliveryMethod !== 'home' && !selectedStoreId && (
-                        <p className="mt-2 text-xs text-orange-600 font-medium">
-                          ⚠ 先に店舗を選択してください
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
                 {/* ============================================ */}
                 {/* 店舗スタッフ向け：シンプル化されたステータス変更 */}
+                {/* 受付待ち(pending)から直接調剤開始可能 */}
                 {/* ============================================ */}
                 
-                {/* 【店舗受け取り】確認済み/調剤中 → シンプルな2ボタン */}
-                {reception.deliveryMethod !== 'home' && (reception.status === 'confirmed' || reception.status === 'preparing') && (
+                {/* 【店舗受け取り】受付待ち/確認済み/調剤中 → シンプルな2ボタン */}
+                {reception.deliveryMethod !== 'home' && (reception.status === 'pending' || reception.status === 'confirmed' || reception.status === 'preparing') && (
                   <div className="space-y-3">
                     {/* 調剤開始ボタン */}
                     <button
@@ -672,9 +639,9 @@ export default function ReceptionDetail({
                     {/* 準備完了ボタン */}
                     <button
                       onClick={() => onStatusChange(reception.receptionId, 'ready')}
-                      disabled={reception.status === 'confirmed'}
+                      disabled={reception.status !== 'preparing'}
                       className={`w-full px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
-                        reception.status === 'confirmed'
+                        reception.status !== 'preparing'
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : 'bg-green-600 text-white hover:bg-green-700'
                       }`}
@@ -682,7 +649,7 @@ export default function ReceptionDetail({
                       ✓ 準備完了・お客様にLINE通知
                     </button>
                     
-                    {reception.status === 'confirmed' && (
+                    {reception.status !== 'preparing' && (
                       <p className="text-xs text-gray-500 text-center">
                         ※ 準備完了は「調剤開始」後に押せます
                       </p>
@@ -700,11 +667,11 @@ export default function ReceptionDetail({
                   </div>
                 )}
 
-                {/* 【自宅受け取り】確認済み/調剤中 → オンライン服薬指導開始のみ */}
-                {reception.deliveryMethod === 'home' && (reception.status === 'confirmed' || reception.status === 'preparing') && (
+                {/* 【自宅受け取り】受付待ち/確認済み/調剤中 → オンライン服薬指導開始 */}
+                {reception.deliveryMethod === 'home' && (reception.status === 'pending' || reception.status === 'confirmed' || reception.status === 'preparing') && (
                   <div className="space-y-3">
                     {/* 調剤開始ボタン（調剤中でなければ表示） */}
-                    {reception.status === 'confirmed' && (
+                    {reception.status !== 'preparing' && (
                       <button
                         onClick={() => onStatusChange(reception.receptionId, 'preparing')}
                         className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
@@ -712,13 +679,18 @@ export default function ReceptionDetail({
                         調剤開始
                       </button>
                     )}
+                    {reception.status === 'preparing' && (
+                      <div className="w-full px-4 py-3 bg-purple-100 text-purple-600 border-2 border-purple-400 rounded-lg text-sm font-medium text-center">
+                        ✓ 調剤中
+                      </div>
+                    )}
                     
                     {/* オンライン服薬指導開始ボタン */}
                     <button
                       onClick={() => onStatusChange(reception.receptionId, 'video_counseling')}
-                      disabled={reception.status === 'confirmed'}
+                      disabled={reception.status !== 'preparing'}
                       className={`w-full px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
-                        reception.status === 'confirmed'
+                        reception.status !== 'preparing'
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : 'bg-pink-600 text-white hover:bg-pink-700'
                       }`}
@@ -726,7 +698,7 @@ export default function ReceptionDetail({
                       📹 オンライン服薬指導開始
                     </button>
                     
-                    {reception.status === 'confirmed' && (
+                    {reception.status !== 'preparing' && (
                       <p className="text-xs text-gray-500 text-center">
                         ※ オンライン服薬指導は「調剤開始」後に開始できます
                       </p>
