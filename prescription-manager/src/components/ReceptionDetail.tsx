@@ -96,6 +96,11 @@ export default function ReceptionDetail({
   const [isChangingDeliveryMethod, setIsChangingDeliveryMethod] = useState(false);
   const [showDeliveryMethodModal, setShowDeliveryMethodModal] = useState(false);
   const [notifyCustomerOnChange, setNotifyCustomerOnChange] = useState(true);
+  
+  // キャンセル確認モーダル（二段階チェック）
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [cancelConfirmStep, setCancelConfirmStep] = useState<1 | 2>(1);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // セッションがタイムアウトしているかどうか判定
   const isSessionTimedOut = reception.messagingSessionStatus === 'closed' && 
@@ -140,6 +145,35 @@ export default function ReceptionDetail({
       setShowDeliveryMethodModal(false);
     } finally {
       setIsChangingDeliveryMethod(false);
+    }
+  };
+
+  // キャンセル確認モーダルを開く
+  const handleOpenCancelModal = () => {
+    setShowCancelConfirmModal(true);
+    setCancelConfirmStep(1);
+  };
+
+  // キャンセル確認モーダルを閉じる
+  const handleCloseCancelModal = () => {
+    setShowCancelConfirmModal(false);
+    setCancelConfirmStep(1);
+  };
+
+  // キャンセル処理実行（二段階目で確定後）
+  const handleConfirmCancel = async () => {
+    if (cancelConfirmStep === 1) {
+      // 一段階目: 二段階目へ進む
+      setCancelConfirmStep(2);
+    } else {
+      // 二段階目: 実際にキャンセル処理を実行
+      setIsCancelling(true);
+      try {
+        await onStatusChange(reception.receptionId, 'cancelled');
+        handleCloseCancelModal();
+      } finally {
+        setIsCancelling(false);
+      }
     }
   };
 
@@ -453,6 +487,93 @@ export default function ReceptionDetail({
               </div>
             )}
 
+            {/* キャンセル確認モーダル（二段階チェック） */}
+            {showCancelConfirmModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-100">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <span className="text-red-500 mr-2">⚠️</span>
+                      {cancelConfirmStep === 1 ? '受付をキャンセルしますか？' : '最終確認'}
+                    </h3>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {cancelConfirmStep === 1 ? (
+                      // 一段階目：初回確認
+                      <>
+                        <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
+                          <p className="text-sm text-red-800 font-medium mb-2">
+                            以下の受付をキャンセルしようとしています：
+                          </p>
+                          <div className="space-y-1 text-sm text-red-700">
+                            <p>・お客様: {reception.userDisplayName || 'お客様'}</p>
+                            <p>・受付番号: #{reception.receptionId.slice(-6)}</p>
+                            <p>・受付日時: {new Date(reception.timestamp).toLocaleString('ja-JP')}</p>
+                            {reception.selectedStoreName && (
+                              <p>・店舗: {reception.selectedStoreName}</p>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          キャンセルすると、お客様への対応が中断されます。
+                          本当にキャンセルしてよろしいですか？
+                        </p>
+                      </>
+                    ) : (
+                      // 二段階目：最終確認
+                      <>
+                        <div className="p-4 bg-red-100 border border-red-200 rounded-lg">
+                          <p className="text-red-800 font-bold text-center mb-2">
+                            ⚠️ 最終確認 ⚠️
+                          </p>
+                          <p className="text-sm text-red-700 text-center">
+                            この操作は取り消せません。<br />
+                            本当にキャンセルしてもよろしいですか？
+                          </p>
+                        </div>
+                        <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                          <p className="text-xs text-gray-600 text-center">
+                            お客様: <span className="font-medium">{reception.userDisplayName || 'お客様'}</span><br />
+                            受付番号: <span className="font-medium">#{reception.receptionId.slice(-6)}</span>
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    
+                    {isCancelling && (
+                      <div className="flex items-center justify-center space-x-2 text-red-600">
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span className="text-sm">キャンセル処理中...</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between">
+                    <button
+                      onClick={handleCloseCancelModal}
+                      disabled={isCancelling}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    >
+                      {cancelConfirmStep === 1 ? 'やめる' : '戻る'}
+                    </button>
+                    <button
+                      onClick={handleConfirmCancel}
+                      disabled={isCancelling}
+                      className={`px-4 py-2 text-sm text-white rounded-lg transition-colors disabled:opacity-50 ${
+                        cancelConfirmStep === 1
+                          ? 'bg-orange-500 hover:bg-orange-600'
+                          : 'bg-red-600 hover:bg-red-700'
+                      }`}
+                    >
+                      {cancelConfirmStep === 1 ? '次へ進む' : 'キャンセルを確定する'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 店舗割振り */}
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">受取店舗を選択</h3>
@@ -494,95 +615,104 @@ export default function ReceptionDetail({
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">ステータス変更</h3>
               <div className="space-y-3">
-                {/* 受付待ち → 確認済み */}
-                {reception.status === 'pending' && (
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => onStatusChange(reception.receptionId, 'confirmed')}
-                      className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={reception.deliveryMethod !== 'home' && !selectedStoreId}
-                    >
-                      ✓ 確認OK・{reception.deliveryMethod === 'home' ? '対応開始' : '店舗に送信'}
-                    </button>
-                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                      <p className="text-xs text-blue-700">
-                        <span className="font-medium">このボタンをクリックすると:</span>
-                      </p>
-                      <ul className="mt-1 text-xs text-blue-600 space-y-1">
-                        <li>• ステータスが「確認済み」に変更されます</li>
-                        {reception.deliveryMethod === 'home' ? (
-                          <li>• オンライン服薬指導の準備を開始します</li>
-                        ) : (
-                          <>
-                            <li>• 選択した店舗に処方箋が割り当てられます</li>
-                            <li>• 店舗スタッフが調剤を開始できるようになります</li>
-                          </>
-                        )}
-                      </ul>
-                      {reception.deliveryMethod !== 'home' && !selectedStoreId && (
-                        <p className="mt-2 text-xs text-orange-600 font-medium">
-                          ⚠ 先に店舗を選択してください
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {/* ============================================ */}
+                {/* 店舗スタッフ向け：シンプル化されたステータス変更 */}
+                {/* 受付待ち(pending)から直接調剤開始可能 */}
+                {/* ============================================ */}
                 
-                {/* 確認済み → 調剤開始 */}
-                {reception.status === 'confirmed' && (
-                  <div className="space-y-2">
+                {/* 【店舗受け取り】受付待ち/確認済み/調剤中 → シンプルな2ボタン */}
+                {reception.deliveryMethod !== 'home' && (reception.status === 'pending' || reception.status === 'confirmed' || reception.status === 'preparing') && (
+                  <div className="space-y-3">
+                    {/* 調剤開始ボタン */}
                     <button
                       onClick={() => onStatusChange(reception.receptionId, 'preparing')}
-                      className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                      disabled={reception.status === 'preparing'}
+                      className={`w-full px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
+                        reception.status === 'preparing'
+                          ? 'bg-purple-100 text-purple-600 border-2 border-purple-400 cursor-default'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      }`}
                     >
-                      調剤開始
+                      {reception.status === 'preparing' ? '✓ 調剤中' : '調剤開始'}
                     </button>
-                    <p className="text-xs text-gray-500">
-                      調剤を開始したらクリックしてください
-                    </p>
+                    
+                    {/* 準備完了ボタン */}
+                    <button
+                      onClick={() => onStatusChange(reception.receptionId, 'ready')}
+                      disabled={reception.status !== 'preparing'}
+                      className={`w-full px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
+                        reception.status !== 'preparing'
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      ✓ 準備完了・お客様にLINE通知
+                    </button>
+                    
+                    {reception.status !== 'preparing' && (
+                      <p className="text-xs text-gray-500 text-center">
+                        ※ 準備完了は「調剤開始」後に押せます
+                      </p>
+                    )}
+                    {reception.status === 'preparing' && (
+                      <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
+                        <p className="text-xs text-green-700">
+                          <span className="font-medium">「準備完了」をクリックすると:</span>
+                        </p>
+                        <ul className="mt-1 text-xs text-green-600 space-y-1">
+                          <li>• <strong>お客様のLINEに準備完了通知が送信されます</strong></li>
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
-                
-                {/* 調剤中 → 店舗受け取り: 準備完了 / 自宅受け取り: 服薬指導開始 */}
-                {reception.status === 'preparing' && (
-                  <div className="space-y-2">
-                    {reception.deliveryMethod === 'home' ? (
-                      <>
-                        <button
-                          onClick={() => onStatusChange(reception.receptionId, 'video_counseling')}
-                          className="w-full px-4 py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm font-medium"
-                        >
-                          📹 オンライン服薬指導を開始
-                        </button>
-                        <div className="p-3 bg-pink-50 border border-pink-100 rounded-lg">
-                          <p className="text-xs text-pink-700">
-                            <span className="font-medium">このボタンをクリックすると:</span>
-                          </p>
-                          <ul className="mt-1 text-xs text-pink-600 space-y-1">
-                            <li>• ステータスが「服薬指導中」に変更されます</li>
-                            <li>• <strong>お客様のLINEにビデオ通話リンクが送信されます</strong></li>
-                            <li>• 同時に店舗側のビデオ通話画面も開きます</li>
-                          </ul>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => onStatusChange(reception.receptionId, 'ready')}
-                          className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-                        >
-                          ✓ 準備完了・お客様にLINE通知
-                        </button>
-                        <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
-                          <p className="text-xs text-green-700">
-                            <span className="font-medium">このボタンをクリックすると:</span>
-                          </p>
-                          <ul className="mt-1 text-xs text-green-600 space-y-1">
-                            <li>• ステータスが「準備完了」に変更されます</li>
-                            <li>• <strong>お客様のLINEに準備完了通知が送信されます</strong></li>
-                          </ul>
-                        </div>
-                      </>
+
+                {/* 【自宅受け取り】受付待ち/確認済み/調剤中 → オンライン服薬指導開始 */}
+                {reception.deliveryMethod === 'home' && (reception.status === 'pending' || reception.status === 'confirmed' || reception.status === 'preparing') && (
+                  <div className="space-y-3">
+                    {/* 調剤開始ボタン（調剤中でなければ表示） */}
+                    {reception.status !== 'preparing' && (
+                      <button
+                        onClick={() => onStatusChange(reception.receptionId, 'preparing')}
+                        className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                      >
+                        調剤開始
+                      </button>
+                    )}
+                    {reception.status === 'preparing' && (
+                      <div className="w-full px-4 py-3 bg-purple-100 text-purple-600 border-2 border-purple-400 rounded-lg text-sm font-medium text-center">
+                        ✓ 調剤中
+                      </div>
+                    )}
+                    
+                    {/* オンライン服薬指導開始ボタン */}
+                    <button
+                      onClick={() => onStatusChange(reception.receptionId, 'video_counseling')}
+                      disabled={reception.status !== 'preparing'}
+                      className={`w-full px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
+                        reception.status !== 'preparing'
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-pink-600 text-white hover:bg-pink-700'
+                      }`}
+                    >
+                      📹 オンライン服薬指導開始
+                    </button>
+                    
+                    {reception.status !== 'preparing' && (
+                      <p className="text-xs text-gray-500 text-center">
+                        ※ オンライン服薬指導は「調剤開始」後に開始できます
+                      </p>
+                    )}
+                    {reception.status === 'preparing' && (
+                      <div className="p-3 bg-pink-50 border border-pink-100 rounded-lg">
+                        <p className="text-xs text-pink-700">
+                          <span className="font-medium">「オンライン服薬指導開始」をクリックすると:</span>
+                        </p>
+                        <ul className="mt-1 text-xs text-pink-600 space-y-1">
+                          <li>• <strong>お客様のLINEにビデオ通話リンクが送信されます</strong></li>
+                          <li>• 同時に店舗側のビデオ通話画面も開きます</li>
+                        </ul>
+                      </div>
                     )}
                   </div>
                 )}
@@ -669,10 +799,10 @@ export default function ReceptionDetail({
                   </div>
                 )}
                 
-                {/* キャンセルボタン */}
+                {/* キャンセルボタン（二段階確認モーダルを開く） */}
                 {reception.status !== 'completed' && reception.status !== 'cancelled' && (
                   <button
-                    onClick={() => onStatusChange(reception.receptionId, 'cancelled')}
+                    onClick={handleOpenCancelModal}
                     className="w-full px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm border border-red-200"
                   >
                     この受付をキャンセル
