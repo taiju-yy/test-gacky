@@ -65,11 +65,76 @@ const DELIVERY_METHODS = {
   HOME: 'home',     // 自宅受け取り（オンライン服薬指導）
 };
 
+// 機能フラグ：自宅受け取り機能を有効にするかどうか
+// 本番環境で自宅受け取りを有効にする場合は true に変更
+const FEATURE_FLAGS = {
+  HOME_DELIVERY_ENABLED: false,  // 自宅受け取り機能（オンライン服薬指導）を有効化
+};
+
 /**
  * 受け取り方法選択メッセージを生成（店舗 or 自宅）
  * ボタンUIで表示（クイックリプライから変更）
+ * 
+ * 注意: 自宅受け取り機能は FEATURE_FLAGS.HOME_DELIVERY_ENABLED で制御
+ * 無効時は「後日公開」として表示される
  */
 function createDeliveryMethodSelectionMessage() {
+  const footerContents = [
+    {
+      type: 'button',
+      style: 'primary',
+      color: '#4CAF50',
+      action: {
+        type: 'postback',
+        label: '🏪 店舗で受け取る',
+        data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
+        displayText: '店舗で受け取る',
+      },
+    },
+  ];
+
+  // 自宅受け取り機能の有効/無効による表示切り替え
+  if (FEATURE_FLAGS.HOME_DELIVERY_ENABLED) {
+    // 機能が有効な場合：通常のボタン
+    footerContents.push({
+      type: 'button',
+      style: 'primary',
+      color: '#2196F3',
+      action: {
+        type: 'postback',
+        label: '🏠 自宅で受け取る',
+        data: `${POSTBACK_PREFIX.DELIVERY_METHOD}home`,
+        displayText: '自宅で受け取る',
+      },
+    });
+  } else {
+    // 機能が無効な場合：「後日公開」として無効化ボタンを表示
+    // LINEのFlex Messageでは disabled 属性がないため、
+    // ダミーのpostbackを設定し、視覚的に無効であることを示す
+    footerContents.push({
+      type: 'button',
+      style: 'secondary',
+      color: '#BDBDBD',  // グレーで無効感を演出
+      action: {
+        type: 'postback',
+        label: '🏠 自宅で受け取る（後日公開）',
+        data: `${POSTBACK_PREFIX.DELIVERY_METHOD}home_disabled`,
+        displayText: '自宅で受け取る',
+      },
+    });
+  }
+
+  footerContents.push({
+    type: 'button',
+    style: 'secondary',
+    action: {
+      type: 'postback',
+      label: '❌ やめる',
+      data: POSTBACK_PREFIX.CANCEL,
+      displayText: '処方箋を送るのをやめます',
+    },
+  });
+
   return {
     type: 'flex',
     altText: 'お薬の受け取り方法を選択してください',
@@ -105,40 +170,7 @@ function createDeliveryMethodSelectionMessage() {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            color: '#4CAF50',
-            action: {
-              type: 'postback',
-              label: '🏪 店舗で受け取る',
-              data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
-              displayText: '店舗で受け取る',
-            },
-          },
-          {
-            type: 'button',
-            style: 'primary',
-            color: '#2196F3',
-            action: {
-              type: 'postback',
-              label: '🏠 自宅で受け取る',
-              data: `${POSTBACK_PREFIX.DELIVERY_METHOD}home`,
-              displayText: '自宅で受け取る',
-            },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: {
-              type: 'postback',
-              label: '❌ やめる',
-              data: POSTBACK_PREFIX.CANCEL,
-              displayText: '処方箋を送るのをやめます',
-            },
-          },
-        ],
+        contents: footerContents,
         paddingAll: '10px',
       },
     },
@@ -1450,6 +1482,7 @@ module.exports = {
   FLOW_STEPS,
   POSTBACK_PREFIX,
   DELIVERY_METHODS,
+  FEATURE_FLAGS,
   PRESCRIPTION_FLOW_TIMEOUT_MINUTES,
   
   // メッセージ生成関数

@@ -40,6 +40,7 @@ const {
   FLOW_STEPS,
   POSTBACK_PREFIX,
   DELIVERY_METHODS,
+  FEATURE_FLAGS,
   createDeliveryMethodSelectionMessage,
   createHomeDeliveryConfirmMessage,
   createStoreSearchMethodMessage,
@@ -1324,6 +1325,92 @@ async function handleDeliveryMethodSelection(props, method, flowState) {
       deliveryMethod: DELIVERY_METHODS.HOME,
       previousStep: flowState.step,
     };
+  } else if (method === 'home_disabled') {
+    // 自宅受け取り機能が無効化されている場合のハンドリング
+    // 「後日公開」ボタンが押された際のフィードバック
+    replyMessages = [
+      {
+        type: 'flex',
+        altText: '自宅受け取りは準備中です',
+        contents: {
+          type: 'bubble',
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '🚧 準備中',
+                weight: 'bold',
+                size: 'lg',
+                align: 'center',
+              },
+              {
+                type: 'separator',
+                margin: 'lg',
+              },
+              {
+                type: 'text',
+                text: '自宅で受け取る（オンライン服薬指導）機能は現在準備中です。',
+                size: 'sm',
+                wrap: true,
+                margin: 'lg',
+                align: 'center',
+              },
+              {
+                type: 'text',
+                text: '公開までもうしばらくお待ちください。',
+                size: 'sm',
+                wrap: true,
+                margin: 'md',
+                align: 'center',
+                color: '#666666',
+              },
+              {
+                type: 'text',
+                text: '現在は「店舗で受け取る」をご利用いただけます。',
+                size: 'sm',
+                wrap: true,
+                margin: 'lg',
+                align: 'center',
+              },
+            ],
+            paddingAll: '20px',
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: [
+              {
+                type: 'button',
+                style: 'primary',
+                color: '#4CAF50',
+                action: {
+                  type: 'postback',
+                  label: '🏪 店舗で受け取る',
+                  data: `${POSTBACK_PREFIX.DELIVERY_METHOD}store`,
+                  displayText: '店舗で受け取る',
+                },
+              },
+              {
+                type: 'button',
+                style: 'secondary',
+                action: {
+                  type: 'postback',
+                  label: '❌ やめる',
+                  data: POSTBACK_PREFIX.CANCEL,
+                  displayText: '処方箋を送るのをやめます',
+                },
+              },
+            ],
+            paddingAll: '10px',
+          },
+        },
+      },
+    ];
+    // フロー状態は変更しない（同じステップに留まる）
+    return await commonAction(props, replyMessages);
   } else {
     console.log(`Unknown delivery method: ${method}`);
     return null;
