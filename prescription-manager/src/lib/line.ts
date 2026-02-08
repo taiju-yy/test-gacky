@@ -90,18 +90,25 @@ export async function sendTextMessage(userId: string, text: string): Promise<boo
 export async function getStoreInfo(storeId: string): Promise<{ phone: string; businessHours: string; storeName: string } | null> {
   try {
     const db = getDynamoDBClient();
+    const tableName = TABLES.STORES;
+    console.log(`[LINE API] getStoreInfo - storeId: "${storeId}", table: ${tableName}`);
+    
     const result = await db.send(new GetCommand({
-      TableName: TABLES.STORES,
+      TableName: tableName,
       Key: { storeId },
     }));
     
+    console.log(`[LINE API] getStoreInfo - result.Item exists: ${!!result.Item}`);
+    
     if (result.Item) {
+      console.log(`[LINE API] getStoreInfo - found store: ${result.Item.storeName}, phone: ${result.Item.phone}`);
       return {
         phone: result.Item.phone || '',
         businessHours: result.Item.businessHours || '',
         storeName: result.Item.storeName || '',
       };
     }
+    console.log(`[LINE API] getStoreInfo - no store found for storeId: ${storeId}`);
     return null;
   } catch (error) {
     console.error('[LINE API] Error fetching store info:', error);
@@ -111,28 +118,60 @@ export async function getStoreInfo(storeId: string): Promise<{ phone: string; bu
 
 /**
  * 店舗名から店舗情報を検索（DynamoDBから）
+ * 完全一致と部分一致の両方をサポート
  */
 export async function getStoreInfoByName(storeName: string): Promise<{ phone: string; businessHours: string; storeId: string } | null> {
   try {
     const db = getDynamoDBClient();
-    // Scanを使用して店舗名で検索（効率的ではないが、店舗数が少ないので許容）
+    console.log(`[LINE API] Searching store by name: "${storeName}"`);
+    
+    // まず全店舗をスキャンして検索
     const result = await db.send(new ScanCommand({
       TableName: TABLES.STORES,
-      FilterExpression: 'storeName = :storeName',
-      ExpressionAttributeValues: {
-        ':storeName': storeName,
-      },
-      Limit: 1,
     }));
     
-    if (result.Items && result.Items.length > 0) {
-      const store = result.Items[0];
+    if (!result.Items || result.Items.length === 0) {
+      console.log('[LINE API] No stores found in database');
+      return null;
+    }
+    
+    console.log(`[LINE API] Found ${result.Items.length} stores in database`);
+    
+    // 店舗名を正規化（「あおぞら薬局」プレフィックスを除去して比較）
+    const normalizedSearchName = storeName
+      .replace(/^あおぞら薬局[\s　]*/g, '')
+      .replace(/店$/, '')
+      .trim();
+    
+    // 完全一致 → 部分一致の順で検索
+    let matchedStore = result.Items.find(store => store.storeName === storeName);
+    
+    if (!matchedStore) {
+      // 「〇〇店」形式での検索
+      matchedStore = result.Items.find(store => {
+        const dbStoreName = (store.storeName || '').replace(/店$/, '').trim();
+        return dbStoreName === normalizedSearchName;
+      });
+    }
+    
+    if (!matchedStore) {
+      // 部分一致（店舗名に検索キーワードが含まれる）
+      matchedStore = result.Items.find(store => {
+        const dbStoreName = store.storeName || '';
+        return dbStoreName.includes(normalizedSearchName) || normalizedSearchName.includes(dbStoreName.replace(/店$/, ''));
+      });
+    }
+    
+    if (matchedStore) {
+      console.log(`[LINE API] Matched store: ${matchedStore.storeName}, phone: ${matchedStore.phone}`);
       return {
-        phone: store.phone || '',
-        businessHours: store.businessHours || '',
-        storeId: store.storeId || '',
+        phone: matchedStore.phone || '',
+        businessHours: matchedStore.businessHours || '',
+        storeId: matchedStore.storeId || '',
       };
     }
+    
+    console.log(`[LINE API] No matching store found for: "${storeName}"`);
     return null;
   } catch (error) {
     console.error('[LINE API] Error fetching store info by name:', error);
