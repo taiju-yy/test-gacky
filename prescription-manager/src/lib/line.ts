@@ -6,6 +6,7 @@
  */
 
 import axios from 'axios';
+import { getDynamoDBClient, TABLES, GetCommand, ScanCommand } from './dynamodb';
 
 /**
  * 環境変数からLINEトークンを取得（ランタイム時に評価）
@@ -84,14 +85,201 @@ export async function sendTextMessage(userId: string, text: string): Promise<boo
 }
 
 /**
- * 準備完了通知を送信（店舗受け取り用）
+ * 店舗情報を取得（DynamoDBから）
  */
-export async function sendReadyNotification(userId: string, storeName: string): Promise<boolean> {
-  const message = `【準備完了のお知らせ】\n\n${storeName}にて、お薬の準備が整いました。\n\nご都合のよろしい時間にご来局ください。`;
-  
+export async function getStoreInfo(storeId: string): Promise<{ phone: string; businessHours: string; storeName: string } | null> {
+  try {
+    const db = getDynamoDBClient();
+    const result = await db.send(new GetCommand({
+      TableName: TABLES.STORES,
+      Key: { storeId },
+    }));
+    
+    if (result.Item) {
+      return {
+        phone: result.Item.phone || '',
+        businessHours: result.Item.businessHours || '',
+        storeName: result.Item.storeName || '',
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('[LINE API] Error fetching store info:', error);
+    return null;
+  }
+}
+
+/**
+ * 店舗名から店舗情報を検索（DynamoDBから）
+ */
+export async function getStoreInfoByName(storeName: string): Promise<{ phone: string; businessHours: string; storeId: string } | null> {
+  try {
+    const db = getDynamoDBClient();
+    // Scanを使用して店舗名で検索（効率的ではないが、店舗数が少ないので許容）
+    const result = await db.send(new ScanCommand({
+      TableName: TABLES.STORES,
+      FilterExpression: 'storeName = :storeName',
+      ExpressionAttributeValues: {
+        ':storeName': storeName,
+      },
+      Limit: 1,
+    }));
+    
+    if (result.Items && result.Items.length > 0) {
+      const store = result.Items[0];
+      return {
+        phone: store.phone || '',
+        businessHours: store.businessHours || '',
+        storeId: store.storeId || '',
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('[LINE API] Error fetching store info by name:', error);
+    return null;
+  }
+}
+
+/**
+ * 準備完了通知を送信（店舗受け取り用）
+ * 店舗電話番号が提供された場合は、電話番号も表示
+ */
+export async function sendReadyNotification(userId: string, storeName: string, storePhone?: string, businessHours?: string): Promise<boolean> {
+  // 電話番号がない場合はシンプルなテキストメッセージ
+  if (!storePhone) {
+    const message = `【準備完了のお知らせ】\n\n${storeName}にて、お薬の準備が整いました。\n\nご都合のよろしい時間にご来局ください。`;
+    return pushMessage({
+      to: userId,
+      messages: [{ type: 'text', text: message }],
+    });
+  }
+
+  // 電話番号がある場合はFlex Messageで表示
+  const bodyContents: any[] = [
+    {
+      type: 'text',
+      text: 'お薬の準備が\n完了しました',
+      weight: 'bold',
+      size: 'lg',
+      align: 'center',
+      wrap: true,
+    },
+    {
+      type: 'separator',
+      margin: 'lg',
+    },
+    {
+      type: 'text',
+      text: 'ご都合のよろしい時間に\nご来局ください。',
+      size: 'sm',
+      color: '#666666',
+      wrap: true,
+      margin: 'lg',
+      align: 'center',
+    },
+    {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '受取店舗',
+          size: 'xs',
+          color: '#888888',
+        },
+        {
+          type: 'text',
+          text: storeName,
+          size: 'md',
+          weight: 'bold',
+          margin: 'xs',
+          wrap: true,
+        },
+        {
+          type: 'text',
+          text: `TEL: ${storePhone}`,
+          size: 'sm',
+          color: '#2196F3',
+          margin: 'xs',
+        },
+      ],
+      margin: 'lg',
+      paddingAll: '12px',
+      backgroundColor: '#F5F5F5',
+      cornerRadius: '8px',
+    },
+  ];
+
+  // 営業時間がある場合は追加
+  if (businessHours) {
+    bodyContents.push({
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '営業時間',
+          size: 'xs',
+          color: '#888888',
+        },
+        {
+          type: 'text',
+          text: businessHours,
+          size: 'xs',
+          color: '#666666',
+          margin: 'xs',
+          wrap: true,
+        },
+      ],
+      margin: 'md',
+      paddingAll: '8px',
+    });
+  }
+
   return pushMessage({
     to: userId,
-    messages: [{ type: 'text', text: message }],
+    messages: [{
+      type: 'flex',
+      altText: '【準備完了】お薬のご用意ができました',
+      contents: {
+        type: 'bubble',
+        hero: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [{
+            type: 'text',
+            text: '💊',
+            size: '3xl',
+            align: 'center',
+          }],
+          paddingAll: '20px',
+          backgroundColor: '#E3F2FD',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: bodyContents,
+          paddingAll: '20px',
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '電話をかける',
+                uri: `tel:${storePhone.replace(/-/g, '')}`,
+              },
+              style: 'primary',
+              color: '#2196F3',
+            },
+          ],
+          paddingAll: '10px',
+        },
+      },
+    }],
   });
 }
 
