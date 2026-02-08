@@ -106,22 +106,32 @@ export async function PATCH(
             let storePhone = '';
             let businessHours = '';
             
+            // デバッグログ
+            console.log(`[Ready Status] Looking up store info - storeId: ${data.selectedStoreId}, storeName: ${data.selectedStoreName}`);
+            
             // 店舗情報を取得（電話番号と営業時間）
             if (data.selectedStoreId) {
+              console.log(`[Ready Status] Fetching by storeId: ${data.selectedStoreId}`);
               const storeInfo = await getStoreInfo(data.selectedStoreId);
-              if (storeInfo) {
-                storePhone = storeInfo.phone;
-                businessHours = storeInfo.businessHours;
-              }
-            } else if (data.selectedStoreName) {
-              // storeIdがない場合は店舗名で検索
-              const storeInfo = await getStoreInfoByName(data.selectedStoreName);
+              console.log(`[Ready Status] getStoreInfo result:`, storeInfo);
               if (storeInfo) {
                 storePhone = storeInfo.phone;
                 businessHours = storeInfo.businessHours;
               }
             }
             
+            // storeIdで見つからない場合、または storeId がない場合は店舗名で検索
+            if (!storePhone && data.selectedStoreName) {
+              console.log(`[Ready Status] Fetching by storeName: ${data.selectedStoreName}`);
+              const storeInfo = await getStoreInfoByName(data.selectedStoreName);
+              console.log(`[Ready Status] getStoreInfoByName result:`, storeInfo);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+                businessHours = storeInfo.businessHours;
+              }
+            }
+            
+            console.log(`[Ready Status] Final - phone: "${storePhone}", businessHours: "${businessHours}"`);
             const sent = await sendReadyNotification(data.userId, storeName, storePhone, businessHours);
             console.log(`Ready notification sent to ${data.userId}: ${sent}, phone: ${storePhone}`);
           }
