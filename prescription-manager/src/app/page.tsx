@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
@@ -63,6 +63,9 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<Record<string, PrescriptionMessage[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // SP表示時の詳細パネルへのスクロール用ref
+  const detailPanelRef = useRef<HTMLDivElement>(null);
 
   // 受付一覧を取得
   const fetchReceptions = useCallback(async () => {
@@ -469,6 +472,14 @@ export default function Dashboard() {
     const checkedReception = checkSessionTimeout(reception);
     setSelectedReception(checkedReception);
     
+    // SP表示時は詳細パネルまでスクロール
+    if (window.innerWidth < 1024 && detailPanelRef.current) {
+      // 少し遅延してレンダリング完了後にスクロール
+      setTimeout(() => {
+        detailPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+    
     // 未読数を即座にUIからクリア（楽観的更新）
     if (reception.unreadMessageCount && reception.unreadMessageCount > 0) {
       setReceptions((prev) =>
@@ -754,10 +765,10 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* メインコンテンツ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 受付リスト */}
-          <div>
+        {/* メインコンテンツ - PCでは左右独立スクロール */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-280px)]">
+          {/* 受付リスト - PC表示時は独立スクロール */}
+          <div className="lg:overflow-y-auto lg:h-full">
             <ReceptionList
               receptions={filteredReceptions}
               onSelect={handleSelectReception}
@@ -765,8 +776,8 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* 詳細パネル */}
-          <div className="lg:sticky lg:top-8 lg:self-start">
+          {/* 詳細パネル - PC表示時は独立スクロール */}
+          <div ref={detailPanelRef} className="lg:overflow-y-auto lg:h-full">
             {selectedReception ? (
               <ReceptionDetail
                 reception={selectedReception}
