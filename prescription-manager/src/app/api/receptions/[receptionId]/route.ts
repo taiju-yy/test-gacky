@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDynamoDBClient, TABLES, GetCommand, UpdateCommand, QueryCommand, PutCommand } from '@/lib/dynamodb';
-import { sendReadyNotification, sendTextMessage, sendShippingNotification, sendShippedNotification, sendDeliveryCompletedNotification, sendVideoCallInvitation } from '@/lib/line';
+import { sendReadyNotification, sendTextMessage, sendShippingNotification, sendShippedNotification, sendDeliveryCompletedNotification, sendVideoCallInvitation, getStoreInfo, getStoreInfoByName } from '@/lib/line';
 import { v4 as uuidv4 } from 'uuid';
 
 // DynamoDB クライアントを取得
@@ -103,8 +103,27 @@ export async function PATCH(
           // お客様にLINE通知を送信（店舗受け取りの場合のみ）
           if (data.userId) {
             const storeName = data.selectedStoreName || 'あおぞら薬局';
-            const sent = await sendReadyNotification(data.userId, storeName);
-            console.log(`Ready notification sent to ${data.userId}: ${sent}`);
+            let storePhone = '';
+            let businessHours = '';
+            
+            // 店舗情報を取得（電話番号と営業時間）
+            if (data.selectedStoreId) {
+              const storeInfo = await getStoreInfo(data.selectedStoreId);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+                businessHours = storeInfo.businessHours;
+              }
+            } else if (data.selectedStoreName) {
+              // storeIdがない場合は店舗名で検索
+              const storeInfo = await getStoreInfoByName(data.selectedStoreName);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+                businessHours = storeInfo.businessHours;
+              }
+            }
+            
+            const sent = await sendReadyNotification(data.userId, storeName, storePhone, businessHours);
+            console.log(`Ready notification sent to ${data.userId}: ${sent}, phone: ${storePhone}`);
           }
         } else if (data.status === 'video_counseling') {
           // オンライン服薬指導開始（自宅受け取り）
@@ -168,9 +187,23 @@ export async function PATCH(
           // お客様にLINE通知を送信（店舗電話番号を含む）
           if (data.userId) {
             const storeName = data.selectedStoreName || 'あおぞら薬局';
-            const storePhone = data.storePhone || null; // 店舗電話番号（将来的に店舗マスタから取得）
-            const sent = await sendShippedNotification(data.userId, storeName, storePhone);
-            console.log(`Shipped notification sent to ${data.userId}: ${sent}`);
+            let storePhone = data.storePhone || '';
+            
+            // 店舗情報から電話番号を取得
+            if (!storePhone && data.selectedStoreId) {
+              const storeInfo = await getStoreInfo(data.selectedStoreId);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+              }
+            } else if (!storePhone && data.selectedStoreName) {
+              const storeInfo = await getStoreInfoByName(data.selectedStoreName);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+              }
+            }
+            
+            const sent = await sendShippedNotification(data.userId, storeName, storePhone || undefined);
+            console.log(`Shipped notification sent to ${data.userId}: ${sent}, phone: ${storePhone}`);
           }
         } else if (data.status === 'completed') {
           updateExpression += ', completedAt = :completedAt, messagingSessionStatus = :sessionStatus, sessionCloseReason = :closeReason';
@@ -181,9 +214,23 @@ export async function PATCH(
           // 自宅受け取りの場合は配送完了通知を送信（店舗電話番号を含む）
           if (data.userId && data.deliveryMethod === 'home') {
             const storeName = data.selectedStoreName || 'あおぞら薬局';
-            const storePhone = data.storePhone || null; // 店舗電話番号（将来的に店舗マスタから取得）
-            const sent = await sendDeliveryCompletedNotification(data.userId, storeName, storePhone);
-            console.log(`Delivery completed notification sent to ${data.userId}: ${sent}`);
+            let storePhone = data.storePhone || '';
+            
+            // 店舗情報から電話番号を取得
+            if (!storePhone && data.selectedStoreId) {
+              const storeInfo = await getStoreInfo(data.selectedStoreId);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+              }
+            } else if (!storePhone && data.selectedStoreName) {
+              const storeInfo = await getStoreInfoByName(data.selectedStoreName);
+              if (storeInfo) {
+                storePhone = storeInfo.phone;
+              }
+            }
+            
+            const sent = await sendDeliveryCompletedNotification(data.userId, storeName, storePhone || undefined);
+            console.log(`Delivery completed notification sent to ${data.userId}: ${sent}, phone: ${storePhone}`);
           }
           
           // セッションテーブルも更新（Lambda側のAI応答スキップを解除）
