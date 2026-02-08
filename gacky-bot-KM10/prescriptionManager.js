@@ -832,8 +832,11 @@ async function reactivateMessagingSession(userId, receptionId) {
  */
 function generateReceptionConfirmMessage(receptionId, flowState = null) {
   const deliveryMethod = flowState?.deliveryMethod || 'store';
-  const selectedStoreName = flowState?.selectedStoreId ? 
-    (require('./storeList').getStoreById(flowState.selectedStoreId)?.storeName || null) : null;
+  const storeInfo = flowState?.selectedStoreId ? 
+    require('./storeList').getStoreById(flowState.selectedStoreId) : null;
+  const selectedStoreName = storeInfo?.storeName || null;
+  const storePhone = storeInfo?.phone || null;
+  const businessHours = storeInfo?.businessHours || null;
   const pickupTimeText = flowState?.pickupTimeText || null;
 
   // 基本のボディコンテンツ
@@ -891,24 +894,49 @@ function generateReceptionConfirmMessage(receptionId, flowState = null) {
     });
   } else {
     if (selectedStoreName) {
+      const storeBoxContents = [
+        {
+          type: 'text',
+          text: '🏪 受取店舗',
+          size: 'xs',
+          color: '#888888',
+        },
+        {
+          type: 'text',
+          text: `あおぞら薬局 ${selectedStoreName}`,
+          size: 'sm',
+          weight: 'bold',
+          margin: 'xs',
+        },
+      ];
+      
+      // 電話番号があれば追加
+      if (storePhone) {
+        storeBoxContents.push({
+          type: 'text',
+          text: `📞 ${storePhone}`,
+          size: 'sm',
+          color: '#666666',
+          margin: 'xs',
+        });
+      }
+      
+      // 営業時間があれば追加
+      if (businessHours) {
+        storeBoxContents.push({
+          type: 'text',
+          text: `🕐 ${businessHours.replace(/\n/g, ' / ')}`,
+          size: 'xs',
+          color: '#888888',
+          margin: 'xs',
+          wrap: true,
+        });
+      }
+      
       bodyContents.push({
         type: 'box',
         layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '🏪 受取店舗',
-            size: 'xs',
-            color: '#888888',
-          },
-          {
-            type: 'text',
-            text: `あおぞら薬局 ${selectedStoreName}`,
-            size: 'sm',
-            weight: 'bold',
-            margin: 'xs',
-          },
-        ],
+        contents: storeBoxContents,
         margin: 'lg',
       });
     }
@@ -948,32 +976,56 @@ function generateReceptionConfirmMessage(receptionId, flowState = null) {
     });
   }
 
+  // Flex Message の構造
+  const bubble = {
+    type: 'bubble',
+    hero: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'text',
+          text: '✅',
+          size: '3xl',
+          align: 'center',
+        },
+      ],
+      paddingAll: '20px',
+      backgroundColor: '#E8F5E9',
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      contents: bodyContents,
+      paddingAll: '20px',
+    },
+  };
+
+  // 電話番号がある場合はフッターに電話ボタンを追加
+  if (storePhone && deliveryMethod === 'store') {
+    bubble.footer = {
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        {
+          type: 'button',
+          action: {
+            type: 'uri',
+            label: `📞 ${selectedStoreName}に電話する`,
+            uri: `tel:${storePhone}`,
+          },
+          style: 'primary',
+          color: '#4CAF50',
+        },
+      ],
+      paddingAll: '10px',
+    };
+  }
+
   return {
     type: 'flex',
     altText: '処方箋を受け付けました',
-    contents: {
-      type: 'bubble',
-      hero: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: '✅',
-            size: '3xl',
-            align: 'center',
-          },
-        ],
-        paddingAll: '20px',
-        backgroundColor: '#E8F5E9',
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        contents: bodyContents,
-        paddingAll: '20px',
-      },
-    },
+    contents: bubble,
   };
 }
 
