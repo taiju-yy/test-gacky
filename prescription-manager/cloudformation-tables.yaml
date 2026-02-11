@@ -28,6 +28,8 @@ Resources:
           AttributeType: S
         - AttributeName: status
           AttributeType: S
+        - AttributeName: selectedStoreId
+          AttributeType: S
       KeySchema:
         - AttributeName: receptionId
           KeyType: HASH
@@ -45,6 +47,14 @@ Resources:
         - IndexName: status-timestamp-index
           KeySchema:
             - AttributeName: status
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: storeId-timestamp-index
+          KeySchema:
+            - AttributeName: selectedStoreId
               KeyType: HASH
             - AttributeName: timestamp
               KeyType: RANGE

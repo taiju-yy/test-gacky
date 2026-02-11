@@ -24,6 +24,7 @@ interface ReceptionDetailProps {
   onStartVideoCall?: (receptionId: string) => Promise<string | null>; // ビデオ通話を開始し、ルームURLを返す
   onDeliveryMethodChange?: (receptionId: string, deliveryMethod: DeliveryMethod, notifyCustomer: boolean) => Promise<void>;
   onClose: () => void;
+  isAdmin?: boolean; // 管理者かどうか（店舗割振り機能の表示制御用）
 }
 
 const statusLabels: Record<ReceptionStatus, string> = {
@@ -61,6 +62,7 @@ export default function ReceptionDetail({
   onStartVideoCall,
   onDeliveryMethodChange,
   onClose,
+  isAdmin = false,
 }: ReceptionDetailProps) {
   // 店舗名から店舗IDを取得するヘルパー関数
   const getStoreIdByName = (storeName: string | undefined): string => {
@@ -574,30 +576,44 @@ export default function ReceptionDetail({
               </div>
             )}
 
-            {/* 店舗割振り */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-2">受取店舗を選択</h3>
-              <select
-                value={selectedStoreId}
-                onChange={(e) => setSelectedStoreId(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              >
-                <option value="">店舗を選択してください</option>
-                {stores.map((store) => (
-                  <option key={store.storeId} value={store.storeId}>
-                    {formatStoreName(store.storeName)}（{store.region}）
-                  </option>
-                ))}
-              </select>
-              {selectedStoreId && selectedStoreId !== reception.selectedStoreId && (
-                <button
-                  onClick={handleAssign}
-                  className="mt-2 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            {/* 店舗割振り（管理者のみ） */}
+            {isAdmin ? (
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-2">受取店舗を選択</h3>
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => setSelectedStoreId(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
-                  この店舗に割振る
-                </button>
-              )}
-            </div>
+                  <option value="">店舗を選択してください</option>
+                  {stores.map((store) => (
+                    <option key={store.storeId} value={store.storeId}>
+                      {formatStoreName(store.storeName)}（{store.region}）
+                    </option>
+                  ))}
+                </select>
+                {selectedStoreId && selectedStoreId !== reception.selectedStoreId && (
+                  <button
+                    onClick={handleAssign}
+                    className="mt-2 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                  >
+                    この店舗に割振る
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* 店舗スタッフには現在の割り当て店舗のみ表示 */
+              reception.selectedStoreName && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">受取店舗</h3>
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm font-medium text-blue-800">
+                      {formatStoreName(reception.selectedStoreName)}
+                    </p>
+                  </div>
+                </div>
+              )
+            )}
 
             {/* 管理者メモ */}
             <div>

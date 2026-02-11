@@ -2,7 +2,7 @@
  * あおぞら薬局 店舗リスト
  * 
  * 店舗情報は以下のフィールドを持つ:
- * - storeId: 店舗ID（ユニーク）
+ * - storeId: 店舗ID（ユニーク、store_XXX形式で統一）
  * - storeName: 店舗名
  * - address: 住所
  * - lat, lon: 緯度・経度
@@ -12,10 +12,12 @@
  * - storeNote: 店舗特有の注記メッセージ（ドライブスルー対応等）
  * - businessHours: 営業時間
  * - phone: 電話番号
+ * 
+ * 注意: storeIdは prescription-manager/src/app/api/stores/route.ts と統一すること
  */
 const storeList = [
   {
-    "storeId": "store_utsushi",
+    "storeId": "store_033",
     "storeName": "宇出津店",
     "address": "927-0433 石川県鳳珠郡能登町宇出津ﾀ56番地5",
     "lat": 37.30858923794464,
@@ -28,7 +30,7 @@ const storeList = [
     "businessHours": "（月－金） 8:30～18:00\n（土） 　　9:00～13:00"
   },
   {
-    "storeId": "store_wajima",
+    "storeId": "store_035",
     "storeName": "輪島店",
     "address": "928-0024 石川県輪島市山岸町は27番地",
     "lat": 37.384682189370515,
@@ -41,7 +43,7 @@ const storeList = [
     "businessHours": "（月－日） 8:00～20:00"
   },
   {
-    "storeId": "store_togi",
+    "storeId": "store_001",
     "storeName": "富来店",
     "address": "925-0446 石川県羽咋郡志賀町富来地頭町七98番地26",
     "lat": 37.13692067581873,
@@ -54,7 +56,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00\n（土） 　　9:00～13:00"
   },
   {
-    "storeId": "store_nakajima",
+    "storeId": "store_027",
     "storeName": "中島店",
     "address": "929-2241 石川県七尾市中島町浜田1丁目34番地1",
     "lat": 37.11328346868235,
@@ -67,7 +69,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～19:00\n（土） 　　9:00～17:00"
   },
   {
-    "storeId": "store_noto_hospital",
+    "storeId": "store_028",
     "storeName": "能登総合病院前店",
     "address": "926-0816 石川県七尾市藤橋町ｱ部6番地19",
     "lat": 37.04442253948692,
@@ -80,7 +82,7 @@ const storeList = [
     "businessHours": "（月－金） 8:30～18:00\n（土）　　 8:30～13:00"
   },
   {
-    "storeId": "store_wakura",
+    "storeId": "store_026",
     "storeName": "和倉店",
     "address": "926-0171 石川県七尾市石崎町ﾀ部15番地5",
     "lat": 37.076222725628725,
@@ -93,7 +95,7 @@ const storeList = [
     "businessHours": "（月ー土） 9:00～18:00"
   },
   {
-    "storeId": "store_fuchu",
+    "storeId": "store_024",
     "storeName": "府中店",
     "address": "926-0042 石川県七尾市作事町58番地2",
     "lat": 37.04561100690085,
@@ -106,7 +108,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:30"
   },
   {
-    "storeId": "store_shinmei",
+    "storeId": "store_025",
     "storeName": "神明店",
     "address": "926-0046 石川県七尾市神明町ロ17番地4",
     "lat": 37.04245722528676,
@@ -119,7 +121,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_tokuda",
+    "storeId": "store_023",
     "storeName": "徳田店",
     "address": "926-0824 石川県七尾市下町ﾆ16番地1",
     "lat": 37.010436080583304,
@@ -132,7 +134,7 @@ const storeList = [
     "businessHours": "（月－金） 8:30～18:30\n（木） 　　8:30～17:30\n（土） 　　8:30～14:30"
   },
   {
-    "storeId": "store_tsuruta",
+    "storeId": "store_002",
     "storeName": "鶴多店",
     "address": "925-0027 石川県羽咋市鶴多町亀田4番地5",
     "lat": 36.89630150298933,
@@ -145,7 +147,7 @@ const storeList = [
     "businessHours": "（月、火、水、金、土） 9:00～18:30　\n（木） 　　9:00～17:00"
   },
   {
-    "storeId": "store_kuratsuki",
+    "storeId": "store_006",
     "storeName": "鞍月店",
     "address": "920-8201 石川県金沢市鞍月東1丁目8番地2",
     "lat": 36.59426624795712,
@@ -158,7 +160,7 @@ const storeList = [
     "businessHours": "（月－日、祝） 9:00～18:00"
   },
   {
-    "storeId": "store_muryoji",
+    "storeId": "store_021",
     "storeName": "無量寺店",
     "address": "920-0333 石川県金沢市無量寺5丁目71番地1",
     "lat": 36.60291660218606,
@@ -171,7 +173,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_iris",
+    "storeId": "store_015",
     "storeName": "アイリス店",
     "address": "920-0024 石川県金沢市西念2丁目36番地5",
     "lat": 36.58702907559102,
@@ -184,7 +186,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00　\n（土）　　 9:00～17:00"
   },
   {
-    "storeId": "store_kanazawa_west",
+    "storeId": "store_011",
     "storeName": "金沢駅西口店",
     "address": "920-0031 石川県金沢市広岡一丁目1番5",
     "lat": 36.57748087530893,
@@ -197,7 +199,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_hirooka",
+    "storeId": "store_010",
     "storeName": "広岡店",
     "address": "920-0031 石川県金沢市広岡1丁目12番地1",
     "lat": 36.57628018591524,
@@ -210,7 +212,7 @@ const storeList = [
     "businessHours": "（月－金） 8:30～17:30　\n（土）　　 8:30～12:30"
   },
   {
-    "storeId": "store_korinbo",
+    "storeId": "store_020",
     "storeName": "香林坊店",
     "address": "920-0981 石川県金沢市片町1丁目1番地1",
     "lat": 36.56193137261904,
@@ -223,7 +225,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～19:00"
   },
   {
-    "storeId": "store_chuodori",
+    "storeId": "store_017",
     "storeName": "中央通町店",
     "address": "920-0866 石川県金沢市中央通町11番50号",
     "lat": 36.56407786556738,
@@ -236,7 +238,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_square_korinbo",
+    "storeId": "store_012",
     "storeName": "スクエア香林坊店",
     "address": "920-0961 石川県金沢市香林坊2丁目8番地15",
     "lat": 36.56609414759086,
@@ -244,10 +246,12 @@ const storeList = [
     "lineUrl": "https://line.me/R/ti/p/@718azhip",
     "mapUrl": "https://maps.app.goo.gl/6zze9aU5jUHRhMDX6",
     "region": "kanazawa",
-    "storeNote": null
+    "storeNote": null,
+    "phone": "",
+    "businessHours": ""
   },
   {
-    "storeId": "store_hashibacho",
+    "storeId": "store_008",
     "storeName": "橋場町店",
     "address": "920-0911 石川県金沢市橋場町3番地15",
     "lat": 36.57098587704741,
@@ -260,7 +264,7 @@ const storeList = [
     "businessHours": "（月－土） 8:30～18:00"
   },
   {
-    "storeId": "store_morimoto",
+    "storeId": "store_007",
     "storeName": "森本店",
     "address": "920-3114 石川県金沢市吉原町ﾊ24番地1",
     "lat": 36.61211037816509,
@@ -273,7 +277,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_tsubata",
+    "storeId": "store_005",
     "storeName": "津幡店",
     "address": "929-0341 石川県河北郡津幡町字横浜へ35番地1",
     "lat": 36.66540402096022,
@@ -286,7 +290,20 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_sakuramachi",
+    "storeId": "store_036",
+    "storeName": "北中条店",
+    "address": "929-0342 石川県河北郡津幡町北中条2丁目31番地",
+    "lat": 36.66296,
+    "lon": 136.72585,
+    "lineUrl": "",
+    "mapUrl": "",
+    "region": "kanazawa",
+    "storeNote": null,
+    "phone": "076-204-8920",
+    "businessHours": "（月－土） 9:00～18:00"
+  },
+  {
+    "storeId": "store_013",
     "storeName": "桜町店",
     "address": "920-0923 石川県金沢市桜町19番23号",
     "lat": 36.56118865648519,
@@ -299,7 +316,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_heiwamachi",
+    "storeId": "store_019",
     "storeName": "平和町店",
     "address": "921-8105 石川県金沢市平和町3丁目2番地13",
     "lat": 36.541369094221324,
@@ -312,7 +329,20 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00\n（土）　　 9:00～12:00"
   },
   {
-    "storeId": "store_wakakusa",
+    "storeId": "store_038",
+    "storeName": "アルコ店",
+    "address": "921-8105 石川県金沢市平和町2丁目13番地18",
+    "lat": 36.54203,
+    "lon": 136.66186,
+    "lineUrl": "",
+    "mapUrl": "",
+    "region": "kanazawa",
+    "storeNote": null,
+    "phone": "076-242-8931",
+    "businessHours": "（月－金） 9:00～16:00"
+  },
+  {
+    "storeId": "store_014",
     "storeName": "若草店",
     "address": "921-8111 石川県金沢市若草町2番地38",
     "lat": 36.54486794168494,
@@ -325,7 +355,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_izumigaoka",
+    "storeId": "store_016",
     "storeName": "泉が丘店",
     "address": "921-8035 石川県金沢市泉が丘2丁目13番39",
     "lat": 36.54262190763349,
@@ -338,7 +368,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_sanba",
+    "storeId": "store_009",
     "storeName": "三馬店",
     "address": "921-8151 石川県金沢市窪7丁目200番地",
     "lat": 36.52965520100299,
@@ -351,7 +381,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_yagi",
+    "storeId": "store_022",
     "storeName": "矢木店",
     "address": "921‐8066 石川県金沢市矢木1丁目44番地",
     "lat": 36.55420751102454,
@@ -364,7 +394,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_yokaichi",
+    "storeId": "store_018",
     "storeName": "八日市店",
     "address": "921-8064 石川県金沢市八日市4丁目364番地",
     "lat": 36.5494740957765,
@@ -377,7 +407,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_oshino",
+    "storeId": "store_034",
     "storeName": "押野店",
     "address": "921-8802 石川県野々市市押野6丁目174番地",
     "lat": 36.544560605208346,
@@ -390,7 +420,20 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_fukudome",
+    "storeId": "store_037",
+    "storeName": "片町店",
+    "address": "920-0981 石川県金沢市片町2丁目13番13号",
+    "lat": 36.56032,
+    "lon": 136.65543,
+    "lineUrl": "",
+    "mapUrl": "",
+    "region": "kanazawa",
+    "storeNote": null,
+    "phone": "076-204-8931",
+    "businessHours": "（月－土） 8:30～18:00"
+  },
+  {
+    "storeId": "store_032",
     "storeName": "福留町店",
     "address": "924-0051 石川県白山市福留町173番地1",
     "lat": 36.490639149075655,
@@ -403,7 +446,7 @@ const storeList = [
     "businessHours": "（月－土） 9:00～18:00"
   },
   {
-    "storeId": "store_komatsu",
+    "storeId": "store_030",
     "storeName": "小松店",
     "address": "923-0961 石川県小松市向本折町ﾎ81番地1",
     "lat": 36.39929229538969,
@@ -416,7 +459,7 @@ const storeList = [
     "businessHours": "（月－土） 8:30～18:00"
   },
   {
-    "storeId": "store_karuumi",
+    "storeId": "store_031",
     "storeName": "軽海店",
     "address": "923-0825 石川県小松市西軽海町1丁目137番地",
     "lat": 36.39776161052722,
@@ -429,7 +472,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00\n（土）　　 9:00～17:00"
   },
   {
-    "storeId": "store_koumade",
+    "storeId": "store_029",
     "storeName": "小馬出店",
     "address": "923-0918 石川県小松市京町54番地2",
     "lat": 36.40622606618214,
@@ -442,7 +485,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00\n（土） 　　9:00～17:00"
   },
   {
-    "storeId": "store_kaga_onsen",
+    "storeId": "store_003",
     "storeName": "加賀温泉駅前店",
     "address": "922-0423 石川県加賀市作見町ﾘ28番地1",
     "lat": 36.317890573778996,
@@ -455,7 +498,7 @@ const storeList = [
     "businessHours": "（月－金） 9:00～18:00\n（土） 　　9:00～12:00"
   },
   {
-    "storeId": "store_yamashiro",
+    "storeId": "store_004",
     "storeName": "山代店",
     "address": "922-0245 石川県加賀市山代温泉山背台1丁目67番地2",
     "lat": 36.29213764928674,
