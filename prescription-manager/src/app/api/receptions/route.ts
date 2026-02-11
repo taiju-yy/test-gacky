@@ -11,11 +11,32 @@ import { refreshPrescriptionImageUrls } from '@/lib/s3';
 // DynamoDB クライアントを取得
 const getDB = () => getDynamoDBClient();
 
+// 店舗名を正規化（比較用）
+const normalizeStoreName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .replace(/^あおぞら薬局[\s　]*/g, '')
+    .replace(/^Aozora[\s　]*/gi, '')
+    .replace(/店$/g, '')
+    .toLowerCase()
+    .trim();
+};
+
+// 店舗IDから店舗名を取得するマッピング（フォールバック用）
+// LINE Bot側で使用されている可能性のある古い形式のIDを含む
+const LEGACY_STORE_ID_TO_NAME: Record<string, string> = {
+  'store_iris': 'アイリス店',
+  'store_hashibacho': '橋場町店',
+  'store_yokaichi': '八日市店',
+  // 必要に応じて追加
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const storeId = searchParams.get('storeId');
+    const storeName = searchParams.get('storeName'); // 店舗名でのフィルタも対応
     const date = searchParams.get('date'); // YYYY-MM-DD形式
 
     // 今日の日付を取得（日本時間）
@@ -46,20 +67,63 @@ export async function GET(request: NextRequest) {
       receptions = result.Items || [];
     } 
     // 店舗でフィルタする場合
-    else if (storeId) {
-      const queryParams = {
+    // storeIdとstoreNameの両方に対応（店舗IDの形式が異なる場合があるため）
+    else if (storeId || storeName) {
+      // Scanで全件取得後、フィルタリング
+      // （店舗IDの形式が複数あるため、GSI使用よりも柔軟なフィルタリングが必要）
+      console.log(`[Receptions API] Filtering by storeId: ${storeId}, storeName: ${storeName}`);
+      
+      const scanParams = {
         TableName: TABLES.PRESCRIPTIONS,
-        IndexName: 'storeId-timestamp-index',
-        KeyConditionExpression: 'selectedStoreId = :storeId',
-        ExpressionAttributeValues: {
-          ':storeId': storeId,
-        },
-        ScanIndexForward: false,
-        Limit: 100,
+        Limit: 500, // フィルタリング前なので多めに取得
       };
 
-      const result = await getDB().send(new QueryCommand(queryParams));
-      receptions = result.Items || [];
+      const result = await getDB().send(new ScanCommand(scanParams));
+      const allReceptions = result.Items || [];
+      
+      // フィルタリング: storeIdまたはstoreNameで一致するものを抽出
+      receptions = allReceptions.filter((reception: any) => {
+        // 1. storeIdが完全一致する場合
+        if (storeId && reception.selectedStoreId === storeId) {
+          return true;
+        }
+        
+        // 2. storeNameが指定されている場合、正規化して比較
+        if (storeName) {
+          const normalizedTarget = normalizeStoreName(storeName);
+          const normalizedReception = normalizeStoreName(reception.selectedStoreName || '');
+          if (normalizedTarget === normalizedReception) {
+            return true;
+          }
+        }
+        
+        // 3. storeIdに対応する店舗名を取得して比較（レガシーID対応）
+        if (storeId) {
+          const legacyStoreName = LEGACY_STORE_ID_TO_NAME[reception.selectedStoreId];
+          if (legacyStoreName) {
+            // レガシーIDに対応する店舗名を取得し、現在のstoreIdの店舗名と比較
+            // 店舗マスターから店舗名を取得する必要がある
+            // ここでは selectedStoreName を使用
+            const normalizedLegacy = normalizeStoreName(legacyStoreName);
+            const normalizedTarget = normalizeStoreName(storeName || '');
+            if (normalizedLegacy === normalizedTarget) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      });
+
+      // タイムスタンプで降順ソート
+      receptions.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      
+      // 最大100件に制限
+      receptions = receptions.slice(0, 100);
+      
+      console.log(`[Receptions API] Found ${receptions.length} receptions for store filter`);
     }
     // 全件取得（Scan - 本番では避けるべき）
     else {

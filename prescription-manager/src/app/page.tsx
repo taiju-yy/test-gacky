@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
@@ -67,10 +69,40 @@ export default function Dashboard() {
   // SP表示時の詳細パネルへのスクロール用ref
   const detailPanelRef = useRef<HTMLDivElement>(null);
 
+  // 認証情報
+  const { user, isAuthenticated, isLoading: authLoading, isAdmin, isStoreStaff, hasStoreAssigned, setSelectedStore } = useAuth();
+  const router = useRouter();
+
+  // 認証チェック
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, router]);
+
   // 受付一覧を取得
   const fetchReceptions = useCallback(async () => {
+    // 店舗スタッフで店舗未設定の場合はスキップ
+    if (isStoreStaff && !hasStoreAssigned) {
+      setReceptions([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch('/api/receptions');
+      // 店舗スタッフの場合は自分の店舗のみ取得
+      let url = '/api/receptions';
+      if (isStoreStaff && user?.assignedStoreId) {
+        const params = new URLSearchParams();
+        params.append('storeId', user.assignedStoreId);
+        // 店舗名も送信（店舗IDの形式が異なる場合のフォールバック用）
+        if (user.assignedStoreName) {
+          params.append('storeName', user.assignedStoreName);
+        }
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
@@ -97,7 +129,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isStoreStaff, hasStoreAssigned, user?.assignedStoreId, user?.assignedStoreName]);
 
   // 店舗一覧を取得
   const fetchStores = useCallback(async () => {
@@ -132,18 +164,28 @@ export default function Dashboard() {
 
   // 初期データ取得
   useEffect(() => {
-    fetchReceptions();
-    fetchStores();
-  }, [fetchReceptions, fetchStores]);
+    if (isAuthenticated) {
+      fetchReceptions();
+      fetchStores();
+    }
+  }, [isAuthenticated, fetchReceptions, fetchStores]);
 
   // 定期的に受付一覧を更新（60秒ごと）
   // コスト抑制のため30秒から60秒に変更
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     const interval = setInterval(() => {
       fetchReceptions();
     }, 60000);
 
     return () => clearInterval(interval);
+  }, [isAuthenticated, fetchReceptions]);
+
+  // 店舗変更時に受付一覧を再取得
+  const handleStoreChange = useCallback((storeId: string, storeName: string) => {
+    // 認証コンテキストの店舗情報は既に更新されているので、受付一覧を再取得
+    fetchReceptions();
   }, [fetchReceptions]);
 
   // 統計計算
@@ -691,11 +733,46 @@ export default function Dashboard() {
     }
   };
 
+  // 認証ローディング中
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gacky-green mx-auto mb-4"></div>
+          <p className="text-gray-500">認証確認中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 店舗スタッフで店舗未設定の場合
+  if (isStoreStaff && !hasStoreAssigned) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header stores={stores} onStoreChange={handleStoreChange} />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">担当店舗を設定してください</h2>
+            <p className="text-gray-500 mb-6">
+              右上の歯車アイコンをクリックして、担当する店舗を選択してください。<br />
+              店舗を設定すると、その店舗に割り振られた受付のみが表示されます。
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ローディング表示
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Header mode="admin" />
+        <Header stores={stores} onStoreChange={handleStoreChange} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
@@ -710,7 +787,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header mode="admin" />
+      <Header stores={stores} onStoreChange={handleStoreChange} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* エラー表示 */}
@@ -790,6 +867,7 @@ export default function Dashboard() {
                 onDeliveryMethodChange={handleDeliveryMethodChange}
                 onStartVideoCall={handleStartVideoCall}
                 onClose={() => setSelectedReception(null)}
+                isAdmin={isAdmin}
               />
             ) : (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 h-96 flex items-center justify-center">

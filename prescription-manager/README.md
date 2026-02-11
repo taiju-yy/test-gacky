@@ -156,9 +156,120 @@ TABLE_CUSTOMER_SESSIONS=gacky-prescription-sessions-dev
 TABLE_STORES=gacky-prescription-stores-dev
 TABLE_VIDEO_CALLS=gacky-prescription-video-calls-dev
 NEXT_PUBLIC_APP_URL=https://your-amplify-app-url.amplifyapp.com
+
+# Cognito認証設定（必須）
+NEXT_PUBLIC_AWS_REGION=ap-northeast-1
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=ap-northeast-1_XXXXXXXXX
+NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=XXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
 **注意**: テーブル名は CloudFormation テンプレート (`cloudformation-tables.yaml`) および `src/lib/dynamodb.ts` のデフォルト値と一致させてください。
+
+## Cognito認証の設定
+
+本システムはAWS Cognitoによる認証を使用しています。以下の手順でCognitoをセットアップしてください。
+
+### 1. Cognito User Poolの作成
+
+AWSコンソールで以下の手順を実行してください：
+
+1. **AWSコンソール** → **Cognito** → **ユーザープールを作成**
+
+2. **サインイン方法の設定**:
+   - 「ユーザー名」と「Eメール」を選択
+   - ユーザー名の要件: 大文字小文字を区別しない（推奨）
+
+3. **パスワードポリシー**:
+   - 最小長: 8文字以上
+   - 大文字、小文字、数字、特殊文字を含める（推奨）
+
+4. **MFA**（多要素認証）:
+   - 本番環境では有効化を推奨
+   - テスト時は「オプション」または「なし」でも可
+
+5. **セルフサービス機能**:
+   - 「自己登録を有効にする」: **無効**（管理者がユーザーを作成）
+   - 「Cognitoがユーザーアカウントの復旧を自動的に検証および確認できるようにする」: 有効
+
+6. **アプリケーションクライアントの作成**:
+   - アプリケーションタイプ: 「パブリッククライアント」
+   - 認証フロー: `ALLOW_USER_SRP_AUTH`, `ALLOW_REFRESH_TOKEN_AUTH` を有効化
+   - クライアントシークレット: **生成しない**（ブラウザアプリケーションのため）
+
+7. **User Pool名**: `gacky-prescription-users-{env}`（例: `gacky-prescription-users-dev`）
+
+### 2. ユーザーの作成
+
+#### 管理者ユーザー（メールアドレスでログイン）
+
+AWSコンソールの「ユーザー」タブから、以下の管理者を作成してください：
+
+| ユーザー名（メールアドレス） | 役割 |
+|------------------------------|------|
+| admin-vpp-line@granpharma.co.jp | 管理者 |
+| granpharmaline@gmail.com | 管理者 |
+
+**作成手順**:
+1. 「ユーザーを作成」をクリック
+2. ユーザー名: メールアドレスを入力
+3. Eメールアドレス: 同じメールアドレスを入力
+4. 「Eメールで招待を送信」を選択（または仮パスワードを設定）
+5. 作成後、初回ログイン時にパスワード変更が必要
+
+#### 店舗スタッフユーザー（店舗IDまたはメールアドレスでログイン）
+
+**方法A: 店舗ID形式のユーザー**（メールアドレスなしのスタッフ用）
+
+| ユーザー名 | 説明 |
+|------------|------|
+| store_utsushi | 写薬局のスタッフアカウント |
+| store_utsushi-staff | 写薬局スタッフアカウント（別名） |
+| store_morimoto | 森本店のスタッフアカウント |
+| store_kanazawa | 金沢店のスタッフアカウント |
+
+**作成手順**:
+1. 「ユーザーを作成」をクリック
+2. ユーザー名: `store_xxx` 形式で入力
+3. 仮パスワードを設定（管理者から店舗に伝達）
+4. Eメールアドレス: 空白のまま（またはダミーアドレス）
+
+**方法B: メールアドレス形式のユーザー**（メールアドレスを持つスタッフ用）
+
+このタイプのスタッフは、ログイン後に右上の歯車アイコンから担当店舗を設定できます。
+
+### 3. 店舗IDの命名規則
+
+店舗IDでログインする場合、ユーザー名は `store_` プレフィックスで始める必要があります：
+
+```
+store_<店舗識別子>
+```
+
+例:
+- `store_utsushi` - 写薬局
+- `store_morimoto` - 森本店
+- `store_007` - 店舗マスタのstoreIdと一致させる場合
+
+### 4. 環境変数の設定
+
+User Pool作成後、以下の情報を環境変数に設定してください：
+
+1. **User Pool ID**: ユーザープールの詳細ページに表示
+   → `NEXT_PUBLIC_COGNITO_USER_POOL_ID`
+
+2. **App Client ID**: アプリケーションクライアントの「クライアントID」
+   → `NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID`
+
+### 5. ロールと権限
+
+| ロール | ログイン方法 | 権限 |
+|--------|--------------|------|
+| 管理者 (admin) | 登録済みメールアドレス | すべての受付閲覧、店舗割振り |
+| 店舗スタッフ (store_staff) | 店舗ID or メールアドレス | 自分の店舗の受付のみ閲覧 |
+
+**店舗スタッフの店舗設定**:
+- 店舗IDでログイン: 自動的にその店舗が割り当て
+- メールアドレスでログイン: 歯車アイコンから店舗を選択して設定
 
 ## UXフロー
 
