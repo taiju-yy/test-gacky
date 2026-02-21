@@ -5,7 +5,7 @@
  */
 
 // Service Worker のバージョン（更新時に変更）
-const SW_VERSION = '1.0.1';
+const SW_VERSION = '1.0.2';
 
 // Service Worker インストール時
 self.addEventListener('install', (event) => {
@@ -80,18 +80,34 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    (async () => {
+      // 通知を表示
+      await self.registration.showNotification(data.title, options);
+      
+      // 開いているタブにメッセージを送信してリストを更新させる
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      console.log('[Service Worker] Notifying', clientList.length, 'client(s) about new prescription');
+      
+      for (const client of clientList) {
+        client.postMessage({
+          type: 'NEW_PRESCRIPTION',
+          data: data.data,
+        });
+      }
+    })()
   );
 });
 
 // 通知クリック時
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification clicked:', event);
+  console.log('[Service Worker] Notification clicked');
   console.log('[Service Worker] Action:', event.action);
-  console.log('[Service Worker] Notification data:', event.notification.data);
+  console.log('[Service Worker] Notification data:', JSON.stringify(event.notification.data));
 
+  // 通知を閉じる
   event.notification.close();
 
+  // 「閉じる」アクションの場合は何もしない
   if (event.action === 'close') {
     console.log('[Service Worker] Close action - doing nothing');
     return;
@@ -107,39 +123,55 @@ self.addEventListener('notificationclick', (event) => {
     urlToOpen = `${baseUrl}/?receptionId=${notificationData.receptionId}`;
   }
   
+  console.log('[Service Worker] Base URL:', baseUrl);
   console.log('[Service Worker] URL to open:', urlToOpen);
 
+  // クリック処理を waitUntil で包む（これが重要）
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
+    (async () => {
+      try {
+        const clientList = await self.clients.matchAll({ 
+          type: 'window', 
+          includeUncontrolled: true 
+        });
+        
         console.log('[Service Worker] Found', clientList.length, 'client(s)');
         
-        // 既に開いているウィンドウがあればフォーカス
+        // 既に開いているウィンドウを探す
         for (const client of clientList) {
-          console.log('[Service Worker] Checking client:', client.url);
-          if (client.url.includes(baseUrl) && 'focus' in client) {
-            console.log('[Service Worker] Focusing existing client');
-            client.focus();
-            // 画面更新を促すメッセージを送信
+          console.log('[Service Worker] Checking client URL:', client.url);
+          
+          // 同じオリジンのウィンドウを見つけた場合
+          if (client.url.startsWith(baseUrl)) {
+            console.log('[Service Worker] Found matching client, focusing...');
+            
+            // フォーカスを当てる
+            await client.focus();
+            
+            // ページにメッセージを送信してリストを更新させる
             client.postMessage({
               type: 'NOTIFICATION_CLICKED',
               data: notificationData,
             });
+            
+            console.log('[Service Worker] Message sent to client');
             return;
           }
         }
         
-        // 開いているウィンドウがなければ新規オープン
-        console.log('[Service Worker] No existing client found, opening new window');
+        // 開いているウィンドウがない場合は新しく開く
+        console.log('[Service Worker] No matching client found, opening new window...');
+        
         if (self.clients.openWindow) {
-          return self.clients.openWindow(urlToOpen);
+          const newClient = await self.clients.openWindow(urlToOpen);
+          console.log('[Service Worker] New window opened:', newClient ? 'success' : 'failed');
         } else {
-          console.log('[Service Worker] openWindow not available');
+          console.error('[Service Worker] openWindow is not available');
         }
-      })
-      .catch((err) => {
-        console.error('[Service Worker] Error handling notification click:', err);
-      })
+      } catch (err) {
+        console.error('[Service Worker] Error in notification click handler:', err);
+      }
+    })()
   );
 });
 

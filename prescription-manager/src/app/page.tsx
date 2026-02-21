@@ -180,6 +180,8 @@ export default function Dashboard() {
 
     // Service Worker からのメッセージを受け取る
     const handleServiceWorkerMessage = (event: MessageEvent) => {
+      console.log('[Dashboard] Service Worker message received:', event.data?.type);
+      
       if (event.data?.type === 'NOTIFICATION_CLICKED') {
         console.log('[Dashboard] Notification clicked, refreshing data...');
         // 通知クリック時に即座にデータを更新
@@ -193,6 +195,10 @@ export default function Dashboard() {
           url.searchParams.set('receptionId', receptionId);
           window.history.replaceState({}, '', url.toString());
         }
+      } else if (event.data?.type === 'NEW_PRESCRIPTION') {
+        // 新しい処方箋が届いた場合、リストを即時更新
+        console.log('[Dashboard] New prescription received, refreshing list...');
+        fetchReceptions();
       }
     };
 
