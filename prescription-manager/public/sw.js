@@ -5,7 +5,7 @@
  */
 
 // Service Worker のバージョン（更新時に変更）
-const SW_VERSION = '1.0.0';
+const SW_VERSION = '1.0.1';
 
 // Service Worker インストール時
 self.addEventListener('install', (event) => {
@@ -87,35 +87,58 @@ self.addEventListener('push', (event) => {
 // 通知クリック時
 self.addEventListener('notificationclick', (event) => {
   console.log('[Service Worker] Notification clicked:', event);
+  console.log('[Service Worker] Action:', event.action);
+  console.log('[Service Worker] Notification data:', event.notification.data);
 
   event.notification.close();
 
   if (event.action === 'close') {
+    console.log('[Service Worker] Close action - doing nothing');
     return;
   }
 
-  // 通知データからURLを取得
-  const urlToOpen = event.notification.data?.url || '/';
+  // 通知データからURLを取得（デフォルトはルート）
+  const notificationData = event.notification.data || {};
+  const baseUrl = self.location.origin;
+  let urlToOpen = baseUrl + '/';
+  
+  // receptionId がある場合はURLパラメータに追加
+  if (notificationData.receptionId) {
+    urlToOpen = `${baseUrl}/?receptionId=${notificationData.receptionId}`;
+  }
+  
+  console.log('[Service Worker] URL to open:', urlToOpen);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
+        console.log('[Service Worker] Found', clientList.length, 'client(s)');
+        
         // 既に開いているウィンドウがあればフォーカス
         for (const client of clientList) {
-          if (client.url.includes(self.location.origin) && 'focus' in client) {
+          console.log('[Service Worker] Checking client:', client.url);
+          if (client.url.includes(baseUrl) && 'focus' in client) {
+            console.log('[Service Worker] Focusing existing client');
             client.focus();
             // 画面更新を促すメッセージを送信
             client.postMessage({
               type: 'NOTIFICATION_CLICKED',
-              data: event.notification.data,
+              data: notificationData,
             });
             return;
           }
         }
+        
         // 開いているウィンドウがなければ新規オープン
+        console.log('[Service Worker] No existing client found, opening new window');
         if (self.clients.openWindow) {
           return self.clients.openWindow(urlToOpen);
+        } else {
+          console.log('[Service Worker] openWindow not available');
         }
+      })
+      .catch((err) => {
+        console.error('[Service Worker] Error handling notification click:', err);
       })
   );
 });
