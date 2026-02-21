@@ -5,7 +5,7 @@
  */
 
 // Service Worker のバージョン（更新時に変更）
-const SW_VERSION = '1.0.4';
+const SW_VERSION = '1.0.5';
 
 // Service Worker インストール時
 self.addEventListener('install', (event) => {
@@ -64,12 +64,14 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/notification-badge.png',
     tag: data.tag || 'prescription-notification',
     renotify: data.renotify !== false,
-    requireInteraction: true, // 通知を画面に残す（ユーザーが操作するまで消えない）
+    // macOS の制限: requireInteraction: true だとクリックイベントが発火しない
+    // false にして、通知クリックでアプリを開けるようにする
+    requireInteraction: false,
     vibrate: [200, 100, 200],
     data: data.data,
-    // 注意: macOS では actions を使うと通知センター経由になり、
-    // クリックイベントが発火しないことがあるため、アクションボタンは使用しない
-    // 通知本体をクリックすることでアプリを開く
+    // macOS では silent: false で通知音を鳴らす
+    silent: false,
+    // 注意: macOS では actions を使うとクリックイベントが発火しないため使用しない
   };
 
   event.waitUntil(

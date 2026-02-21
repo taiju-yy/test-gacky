@@ -178,6 +178,34 @@ export default function Dashboard() {
     // Service Worker を登録
     registerServiceWorker();
 
+    // 通知音を鳴らす関数
+    const playNotificationSound = () => {
+      try {
+        // Web Audio API を使用して通知音を生成
+        const audioContext = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 音の設定（心地よいチャイム音）
+        oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+        oscillator.frequency.setValueAtTime(1108.73, audioContext.currentTime + 0.1); // C#6
+        oscillator.frequency.setValueAtTime(1318.51, audioContext.currentTime + 0.2); // E6
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+        
+        console.log('[Dashboard] Notification sound played');
+      } catch (err) {
+        console.log('[Dashboard] Could not play notification sound:', err);
+      }
+    };
+
     // Service Worker からのメッセージを受け取る
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       console.log('[Dashboard] Service Worker message received:', event.data?.type);
@@ -199,6 +227,9 @@ export default function Dashboard() {
         // 新しい処方箋が届いた場合、リストを即時更新
         console.log('[Dashboard] New prescription received, refreshing list...');
         fetchReceptions();
+        
+        // 通知音を鳴らす（タブが開いている場合）
+        playNotificationSound();
       }
     };
 
