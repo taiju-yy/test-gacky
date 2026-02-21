@@ -63,6 +63,7 @@ export function getTables() {
     STORES: process.env.TABLE_STORES || 'gacky-prescription-stores-dev',
     CUSTOMER_PROFILES: process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev',
     VIDEO_CALLS: process.env.TABLE_VIDEO_CALLS || 'gacky-prescription-video-calls-dev',
+    PUSH_SUBSCRIPTIONS: process.env.TABLE_PUSH_SUBSCRIPTIONS || 'gacky-prescription-push-subscriptions-dev',
   };
 }
 
@@ -75,6 +76,7 @@ export const TABLES = {
   get STORES() { return process.env.TABLE_STORES || 'gacky-prescription-stores-dev'; },
   get CUSTOMER_PROFILES() { return process.env.TABLE_CUSTOMER_PROFILES || 'gacky-prescription-customer-profiles-dev'; },
   get VIDEO_CALLS() { return process.env.TABLE_VIDEO_CALLS || 'gacky-prescription-video-calls-dev'; },
+  get PUSH_SUBSCRIPTIONS() { return process.env.TABLE_PUSH_SUBSCRIPTIONS || 'gacky-prescription-push-subscriptions-dev'; },
 };
 
 // エクスポート

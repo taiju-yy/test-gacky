@@ -123,6 +123,15 @@ async function handlePrescriptionImage(userId, userProfile, imageContent, messag
     // お客様プロフィールを更新（将来の履歴統合表示用）
     await updateCustomerProfile(userId, userProfile, selectedStoreId, selectedStoreName);
 
+    // リアルタイム通知を送信（店舗スタッフへPush通知、管理者へメール）
+    try {
+      const { sendNewPrescriptionNotification } = require('./notificationManager');
+      await sendNewPrescriptionNotification(receptionItem);
+    } catch (notifyError) {
+      // 通知失敗でも受付処理は継続
+      console.error('Error sending notification (non-blocking):', notifyError);
+    }
+
     console.log(`Prescription reception created: ${receptionId}, deliveryMethod: ${deliveryMethod}, store: ${selectedStoreName || 'N/A'}`);
 
     return {

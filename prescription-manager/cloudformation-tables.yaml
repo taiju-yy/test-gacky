@@ -134,6 +134,43 @@ Resources:
         - Key: Component
           Value: PrescriptionManager
 
+  # プッシュ通知購読テーブル（リアルタイム通知用）
+  PushSubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'gacky-prescription-push-subscriptions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: subscriptionId
+          AttributeType: S
+        - AttributeName: storeId
+          AttributeType: S
+        - AttributeName: userType
+          AttributeType: S
+      KeySchema:
+        - AttributeName: subscriptionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # 店舗IDで通知先を検索するためのインデックス
+        - IndexName: storeId-index
+          KeySchema:
+            - AttributeName: storeId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        # ユーザータイプ（admin/store_staff）で検索するためのインデックス
+        - IndexName: userType-index
+          KeySchema:
+            - AttributeName: userType
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: Gacky
+        - Key: Component
+          Value: PrescriptionManager
+
 Outputs:
   PrescriptionsTableName:
     Description: Name of the Prescriptions table
@@ -164,3 +201,15 @@ Outputs:
     Value: !Ref VideoCallRoomsTable
     Export:
       Name: !Sub '${AWS::StackName}-VideoCallRoomsTable'
+
+  PushSubscriptionsTableName:
+    Description: Name of the Push Subscriptions table
+    Value: !Ref PushSubscriptionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PushSubscriptionsTable'
+
+  PushSubscriptionsTableArn:
+    Description: ARN of the Push Subscriptions table
+    Value: !GetAtt PushSubscriptionsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PushSubscriptionsTableArn'

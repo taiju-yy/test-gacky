@@ -8,6 +8,7 @@ import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
 import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
+import { registerServiceWorker } from '@/lib/pushNotification';
 
 const SESSION_TIMEOUT_MINUTES = 30;
 
@@ -169,6 +170,38 @@ export default function Dashboard() {
       fetchStores();
     }
   }, [isAuthenticated, fetchReceptions, fetchStores]);
+
+  // Service Worker 登録とプッシュ通知のリスナー設定
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Service Worker を登録
+    registerServiceWorker();
+
+    // Service Worker からのメッセージを受け取る
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_CLICKED') {
+        console.log('[Dashboard] Notification clicked, refreshing data...');
+        // 通知クリック時に即座にデータを更新
+        fetchReceptions();
+        
+        // 特定の受付を選択する場合
+        const receptionId = event.data?.data?.receptionId;
+        if (receptionId) {
+          // URLパラメータを更新して受付を選択状態にする
+          const url = new URL(window.location.href);
+          url.searchParams.set('receptionId', receptionId);
+          window.history.replaceState({}, '', url.toString());
+        }
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
+
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
+    };
+  }, [isAuthenticated, fetchReceptions]);
 
   // 定期的に受付一覧を更新（60秒ごと）
   // コスト抑制のため30秒から60秒に変更
