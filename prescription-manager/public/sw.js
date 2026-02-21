@@ -5,7 +5,7 @@
  */
 
 // Service Worker のバージョン（更新時に変更）
-const SW_VERSION = '1.0.2';
+const SW_VERSION = '1.0.3';
 
 // Service Worker インストール時
 self.addEventListener('install', (event) => {
@@ -64,19 +64,11 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/notification-badge.png',
     tag: data.tag || 'prescription-notification',
     renotify: data.renotify !== false,
-    requireInteraction: data.requireInteraction !== false,
+    requireInteraction: false, // macOSでは true だと通知センターに残り、クリックイベントが発火しにくい
     vibrate: [200, 100, 200],
     data: data.data,
-    actions: [
-      {
-        action: 'open',
-        title: '確認する',
-      },
-      {
-        action: 'close',
-        title: '閉じる',
-      },
-    ],
+    // macOS では actions を使うと通知センター経由になり、クリックイベントが発火しないことがある
+    // そのため、アクションボタンは削除し、通知本体のクリックで処理する
   };
 
   event.waitUntil(
@@ -98,7 +90,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// 通知クリック時
+// 通知クリック時（通知本体のクリック）
 self.addEventListener('notificationclick', (event) => {
   console.log('[Service Worker] Notification clicked');
   console.log('[Service Worker] Action:', event.action);
@@ -106,12 +98,6 @@ self.addEventListener('notificationclick', (event) => {
 
   // 通知を閉じる
   event.notification.close();
-
-  // 「閉じる」アクションの場合は何もしない
-  if (event.action === 'close') {
-    console.log('[Service Worker] Close action - doing nothing');
-    return;
-  }
 
   // 通知データからURLを取得（デフォルトはルート）
   const notificationData = event.notification.data || {};
