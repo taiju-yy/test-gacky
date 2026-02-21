@@ -8,6 +8,7 @@ import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
 import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
+import { registerServiceWorker } from '@/lib/pushNotification';
 
 const SESSION_TIMEOUT_MINUTES = 30;
 
@@ -170,23 +171,131 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, fetchReceptions, fetchStores]);
 
-  // 定期的に受付一覧を更新（60秒ごと）
-  // コスト抑制のため30秒から60秒に変更
+  // Service Worker 登録とプッシュ通知のリスナー設定
   useEffect(() => {
     if (!isAuthenticated) return;
-    
-    const interval = setInterval(() => {
-      fetchReceptions();
-    }, 60000);
 
-    return () => clearInterval(interval);
+    // Service Worker を登録
+    registerServiceWorker();
+
+    // 通知音を鳴らす関数
+    const playNotificationSound = () => {
+      try {
+        // Web Audio API を使用して通知音を生成
+        const audioContext = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 音の設定（心地よいチャイム音）
+        oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+        oscillator.frequency.setValueAtTime(1108.73, audioContext.currentTime + 0.1); // C#6
+        oscillator.frequency.setValueAtTime(1318.51, audioContext.currentTime + 0.2); // E6
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+        
+        console.log('[Dashboard] Notification sound played');
+      } catch (err) {
+        console.log('[Dashboard] Could not play notification sound:', err);
+      }
+    };
+
+    // Service Worker からのメッセージを受け取る
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      console.log('[Dashboard] Service Worker message received:', event.data?.type);
+      
+      if (event.data?.type === 'NOTIFICATION_CLICKED') {
+        console.log('[Dashboard] Notification clicked, refreshing data...');
+        // 通知クリック時に即座にデータを更新
+        fetchReceptions();
+        
+        // 特定の受付を選択する場合
+        const receptionId = event.data?.data?.receptionId;
+        if (receptionId) {
+          // URLパラメータを更新して受付を選択状態にする
+          const url = new URL(window.location.href);
+          url.searchParams.set('receptionId', receptionId);
+          window.history.replaceState({}, '', url.toString());
+        }
+      } else if (event.data?.type === 'NEW_PRESCRIPTION') {
+        // 新しい処方箋が届いた場合、リストを即時更新
+        console.log('[Dashboard] New prescription received, refreshing list...');
+        fetchReceptions();
+        
+        // 通知音を鳴らす（タブが開いている場合）
+        playNotificationSound();
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
+
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
+    };
   }, [isAuthenticated, fetchReceptions]);
 
-  // 店舗変更時に受付一覧を再取得
-  const handleStoreChange = useCallback((storeId: string, storeName: string) => {
-    // 認証コンテキストの店舗情報は既に更新されているので、受付一覧を再取得
-    fetchReceptions();
-  }, [fetchReceptions]);
+  // ポーリングは廃止
+  // リアルタイム通知（Web Push）により、新規受付は即座に通知されるため
+  // 60秒ごとのポーリングは不要になりました
+  // 通知クリック時や画面フォーカス時に手動で更新します
+
+  // 画面がフォーカスされた時に更新（タブ切り替え時など）
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleFocus = () => {
+      console.log('[Dashboard] Window focused, refreshing data...');
+      fetchReceptions();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isAuthenticated, fetchReceptions]);
+
+  // 店舗変更時に受付一覧を即時再取得
+  // 注意: useCallbackの依存関係ではなく、引数で渡された店舗情報を使用
+  const handleStoreChange = useCallback(async (storeId: string, storeName: string) => {
+    console.log(`[Dashboard] handleStoreChange called - Store: ${storeName} (${storeId}), isStoreStaff: ${isStoreStaff}`);
+    setIsLoading(true);
+    setSelectedReception(null); // 選択中の受付をクリア
+    
+    try {
+      // 店舗スタッフの場合は新しい店舗のデータを取得
+      // 注: isStoreStaff に関わらず、storeId が渡された場合は店舗フィルタを適用
+      let url = '/api/receptions';
+      if (storeId) {
+        const params = new URLSearchParams();
+        params.append('storeId', storeId);
+        params.append('storeName', storeName);
+        url += `?${params.toString()}`;
+        console.log(`[Dashboard] Fetching receptions for store: ${storeId}`);
+      } else {
+        console.log('[Dashboard] Fetching all receptions (no store filter)');
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.success) {
+        const receptionsWithTimeoutCheck = data.data.map(checkSessionTimeout);
+        setReceptions(receptionsWithTimeoutCheck);
+        setError(null);
+      } else {
+        setError(data.error || 'データの取得に失敗しました');
+      }
+    } catch (err) {
+      console.error('Error fetching receptions after store change:', err);
+      setError('サーバーとの通信に失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // 統計計算
   const stats: DashboardStats = {
