@@ -23,7 +23,6 @@ const STORES = [
     { id: 'store_009', name: '三馬店', region: 'kanazawa' },
     { id: 'store_010', name: '広岡店', region: 'kanazawa' },
     { id: 'store_011', name: '金沢駅西口店', region: 'kanazawa' },
-    { id: 'store_012', name: 'スクエア香林坊店', region: 'kanazawa' },
     { id: 'store_013', name: '桜町店', region: 'kanazawa' },
     { id: 'store_014', name: '若草店', region: 'kanazawa' },
     { id: 'store_015', name: 'アイリス店', region: 'kanazawa' },

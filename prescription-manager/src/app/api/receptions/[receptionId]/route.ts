@@ -305,9 +305,32 @@ export async function PATCH(
           const displayStoreName = storeName
             .replace(/^あおぞら薬局[\s　]*/g, '')
             .replace(/^Aozora[\s　]*/gi, '');
-          const message = `【お知らせ】\n\nお客様の処方箋について、調剤を担当する店舗が変更になりました。\n\n担当店舗: あおぞら薬局 ${displayStoreName}\n\nお薬の準備ができ次第ご連絡いたします。`;
+          
+          // 新しい担当店舗の電話番号を取得
+          let storePhone = '';
+          if (data.storeId) {
+            const storeInfo = await getStoreInfo(data.storeId);
+            if (storeInfo) {
+              storePhone = storeInfo.phone;
+            }
+          }
+          // storeIdで見つからない場合は店舗名で検索
+          if (!storePhone && data.storeName) {
+            const storeInfo = await getStoreInfoByName(data.storeName);
+            if (storeInfo) {
+              storePhone = storeInfo.phone;
+            }
+          }
+          
+          // 電話番号がある場合はメッセージに含める
+          let message = `【お知らせ】\n\nお客様の処方箋について、調剤を担当する店舗が変更になりました。\n\n担当店舗: あおぞら薬局 ${displayStoreName}`;
+          if (storePhone) {
+            message += `\n電話番号: ${storePhone}`;
+          }
+          message += '\n\nお薬の準備ができ次第ご連絡いたします。';
+          
           const sent = await sendTextMessage(data.userId, message);
-          console.log(`Store change notification sent to ${data.userId}: ${sent}`);
+          console.log(`Store change notification sent to ${data.userId}: ${sent}, phone: ${storePhone}`);
         }
         break;
 
