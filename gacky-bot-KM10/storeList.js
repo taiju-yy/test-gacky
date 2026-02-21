@@ -237,19 +237,7 @@ const storeList = [
     "phone": "076-234-8931",
     "businessHours": "（月－土） 9:00～18:00"
   },
-  {
-    "storeId": "store_012",
-    "storeName": "スクエア香林坊店",
-    "address": "920-0961 石川県金沢市香林坊2丁目8番地15",
-    "lat": 36.56609414759086,
-    "lon": 136.652137431877,
-    "lineUrl": "https://line.me/R/ti/p/@718azhip",
-    "mapUrl": "https://maps.app.goo.gl/6zze9aU5jUHRhMDX6",
-    "region": "kanazawa",
-    "storeNote": null,
-    "phone": "",
-    "businessHours": ""
-  },
+
   {
     "storeId": "store_008",
     "storeName": "橋場町店",
