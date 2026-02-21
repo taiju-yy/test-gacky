@@ -53,7 +53,7 @@ export default function Header({ stores = [], onStoreChange }: HeaderProps) {
   const canChangeStore = isStoreStaff && !isStoreIdLogin;
 
   // 店舗設定を保存
-  const handleSaveStore = () => {
+  const handleSaveStore = async () => {
     if (!selectedStoreId) return;
     
     const store = stores.find((s) => s.storeId === selectedStoreId);
@@ -61,6 +61,26 @@ export default function Header({ stores = [], onStoreChange }: HeaderProps) {
       setSelectedStore(selectedStoreId, store.storeName);
       if (onStoreChange) {
         onStoreChange(selectedStoreId, store.storeName);
+      }
+
+      // プッシュ通知の購読情報も更新（店舗情報を同期）
+      try {
+        const userId = user?.username || user?.email;
+        if (userId) {
+          await fetch('/api/push-subscriptions', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId,
+              storeId: selectedStoreId,
+              storeName: store.storeName,
+            }),
+          });
+          console.log('Push subscription store info updated');
+        }
+      } catch (error) {
+        console.error('Failed to update push subscription store info:', error);
+        // 通知購読の更新失敗は店舗設定をブロックしない
       }
     }
     setShowStoreModal(false);

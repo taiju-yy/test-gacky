@@ -2,12 +2,13 @@
  * プッシュ通知購読管理API
  * 
  * POST: 購読を登録
+ * PATCH: 購読の店舗情報を更新
  * DELETE: 購読を解除
  * GET: 購読状態を確認
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDynamoDBClient, TABLES, PutCommand, DeleteCommand, QueryCommand, ScanCommand } from '@/lib/dynamodb';
+import { getDynamoDBClient, TABLES, PutCommand, DeleteCommand, QueryCommand, ScanCommand, UpdateCommand } from '@/lib/dynamodb';
 import { createHash } from 'crypto';
 
 // DynamoDB クライアントを取得
@@ -119,6 +120,82 @@ export async function DELETE(request: NextRequest) {
     console.error('Error deleting push subscription:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to delete subscription' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH: 購読の店舗情報を更新（店舗変更時）
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { userId, storeId, storeName } = body;
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'userId is required' },
+        { status: 400 }
+      );
+    }
+
+    // ユーザーの購読を検索
+    const scanResult = await getDB().send(new ScanCommand({
+      TableName: TABLES.PUSH_SUBSCRIPTIONS,
+      FilterExpression: 'userId = :userId AND isActive = :isActive',
+      ExpressionAttributeValues: {
+        ':userId': userId,
+        ':isActive': true,
+      },
+    }));
+
+    const subscriptions = scanResult.Items || [];
+
+    if (subscriptions.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: { updated: 0, message: 'No active subscriptions found for user' },
+      });
+    }
+
+    // 各購読の店舗情報を更新
+    const timestamp = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const sub of subscriptions) {
+      try {
+        await getDB().send(new UpdateCommand({
+          TableName: TABLES.PUSH_SUBSCRIPTIONS,
+          Key: {
+            subscriptionId: sub.subscriptionId,
+          },
+          UpdateExpression: 'SET storeId = :storeId, storeName = :storeName, updatedAt = :updatedAt',
+          ExpressionAttributeValues: {
+            ':storeId': storeId || null,
+            ':storeName': storeName || null,
+            ':updatedAt': timestamp,
+          },
+        }));
+        updatedCount++;
+        console.log(`Push subscription ${sub.subscriptionId} updated: storeId=${storeId}`);
+      } catch (updateError) {
+        console.error(`Failed to update subscription ${sub.subscriptionId}:`, updateError);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        updated: updatedCount,
+        storeId,
+        storeName,
+      },
+    });
+  } catch (error) {
+    console.error('Error updating push subscriptions:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update subscriptions' },
       { status: 500 }
     );
   }
