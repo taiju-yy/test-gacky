@@ -203,23 +203,62 @@ export default function Dashboard() {
     };
   }, [isAuthenticated, fetchReceptions]);
 
-  // 定期的に受付一覧を更新（60秒ごと）
-  // コスト抑制のため30秒から60秒に変更
+  // ポーリングは廃止
+  // リアルタイム通知（Web Push）により、新規受付は即座に通知されるため
+  // 60秒ごとのポーリングは不要になりました
+  // 通知クリック時や画面フォーカス時に手動で更新します
+
+  // 画面がフォーカスされた時に更新（タブ切り替え時など）
   useEffect(() => {
     if (!isAuthenticated) return;
-    
-    const interval = setInterval(() => {
-      fetchReceptions();
-    }, 60000);
 
-    return () => clearInterval(interval);
+    const handleFocus = () => {
+      console.log('[Dashboard] Window focused, refreshing data...');
+      fetchReceptions();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [isAuthenticated, fetchReceptions]);
 
-  // 店舗変更時に受付一覧を再取得
-  const handleStoreChange = useCallback((storeId: string, storeName: string) => {
-    // 認証コンテキストの店舗情報は既に更新されているので、受付一覧を再取得
-    fetchReceptions();
-  }, [fetchReceptions]);
+  // 店舗変更時に受付一覧を即時再取得
+  // 注意: useCallbackの依存関係ではなく、引数で渡された店舗情報を使用
+  const handleStoreChange = useCallback(async (storeId: string, storeName: string) => {
+    console.log(`[Dashboard] handleStoreChange called - Store: ${storeName} (${storeId}), isStoreStaff: ${isStoreStaff}`);
+    setIsLoading(true);
+    setSelectedReception(null); // 選択中の受付をクリア
+    
+    try {
+      // 店舗スタッフの場合は新しい店舗のデータを取得
+      // 注: isStoreStaff に関わらず、storeId が渡された場合は店舗フィルタを適用
+      let url = '/api/receptions';
+      if (storeId) {
+        const params = new URLSearchParams();
+        params.append('storeId', storeId);
+        params.append('storeName', storeName);
+        url += `?${params.toString()}`;
+        console.log(`[Dashboard] Fetching receptions for store: ${storeId}`);
+      } else {
+        console.log('[Dashboard] Fetching all receptions (no store filter)');
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.success) {
+        const receptionsWithTimeoutCheck = data.data.map(checkSessionTimeout);
+        setReceptions(receptionsWithTimeoutCheck);
+        setError(null);
+      } else {
+        setError(data.error || 'データの取得に失敗しました');
+      }
+    } catch (err) {
+      console.error('Error fetching receptions after store change:', err);
+      setError('サーバーとの通信に失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // 統計計算
   const stats: DashboardStats = {

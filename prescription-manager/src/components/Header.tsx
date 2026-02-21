@@ -58,8 +58,14 @@ export default function Header({ stores = [], onStoreChange }: HeaderProps) {
     
     const store = stores.find((s) => s.storeId === selectedStoreId);
     if (store) {
+      console.log('[Header] Saving store:', selectedStoreId, store.storeName);
+      
+      // まず認証コンテキストの店舗情報を更新
       setSelectedStore(selectedStoreId, store.storeName);
+      
+      // 店舗変更コールバックを即座に実行（受付リストを即時更新）
       if (onStoreChange) {
+        console.log('[Header] Calling onStoreChange callback...');
         onStoreChange(selectedStoreId, store.storeName);
       }
 
