@@ -4,9 +4,17 @@
  * 店舗データをDynamoDBにインポートするスクリプト
  * 
  * 使用方法:
+ *   cd prescription-manager
  *   node scripts/seed-stores.js dev          # 開発環境
  *   node scripts/seed-stores.js prod         # 本番環境
  *   node scripts/seed-stores.js dev gacky    # プロファイル指定
+ * 
+ * データソース:
+ *   - 優先: ../../shared/stores/fallback-data.json（Single Source of Truth）
+ *   - フォールバック: ./cloudformation/seed-stores-data.json
+ * 
+ * Note: 店舗情報を更新する場合は shared/stores/fallback-data.json を編集し、
+ *       このスクリプトを実行してDynamoDBに反映してください。
  */
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -36,20 +44,59 @@ if (profile) {
 const client = new DynamoDBClient(clientConfig);
 const dynamoDB = DynamoDBDocumentClient.from(client);
 
+/**
+ * 店舗データファイルを読み込む
+ * shared/stores/fallback-data.json を優先し、なければ cloudformation/seed-stores-data.json を使用
+ */
+function loadStoreData() {
+  // 優先: shared/stores/fallback-data.json（Single Source of Truth）
+  const sharedDataPath = path.join(__dirname, '../../shared/stores/fallback-data.json');
+  
+  if (fs.existsSync(sharedDataPath)) {
+    console.log(`データソース: ${sharedDataPath} (Single Source of Truth)`);
+    const rawData = JSON.parse(fs.readFileSync(sharedDataPath, 'utf-8'));
+    
+    // fallback-data.json の形式を seed-stores-data.json の形式に変換
+    // (lat/lon → latitude/longitude, region code → region name)
+    return rawData.map(store => ({
+      storeId: store.storeId,
+      storeName: store.storeName,
+      region: store.region,  // kanazawa, kaga, noto のまま
+      postalCode: store.postalCode,
+      address: store.address,
+      latitude: String(store.lat),
+      longitude: String(store.lon),
+      lineUrl: store.lineUrl,
+      phone: store.phone,
+      mapUrl: store.mapUrl,
+      businessHours: store.businessHours,
+      storeNote: store.storeNote || undefined,
+    }));
+  }
+  
+  // フォールバック: cloudformation/seed-stores-data.json
+  const legacyDataPath = path.join(__dirname, '../cloudformation/seed-stores-data.json');
+  
+  if (fs.existsSync(legacyDataPath)) {
+    console.log(`データソース: ${legacyDataPath} (フォールバック)`);
+    console.log(`Warning: shared/stores/fallback-data.json が見つかりません`);
+    return JSON.parse(fs.readFileSync(legacyDataPath, 'utf-8'));
+  }
+  
+  console.error('Error: 店舗データファイルが見つかりません');
+  console.error(`  確認したパス:`);
+  console.error(`    - ${sharedDataPath}`);
+  console.error(`    - ${legacyDataPath}`);
+  process.exit(1);
+}
+
 async function seedStores() {
   console.log(`\n=== 店舗データインポート ===`);
   console.log(`Environment: ${environment}`);
   console.log(`Table: ${TABLE_NAME}\n`);
 
-  // JSONファイルを読み込み
-  const dataPath = path.join(__dirname, '../cloudformation/seed-stores-data.json');
-  
-  if (!fs.existsSync(dataPath)) {
-    console.error(`Error: ${dataPath} not found`);
-    process.exit(1);
-  }
-
-  const stores = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+  // 店舗データを読み込み
+  const stores = loadStoreData();
   console.log(`${stores.length} 店舗のデータを読み込みました\n`);
 
   // 既存データを確認
