@@ -1,61 +1,19 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 
+// ローカルの店舗データモジュールから取得
+const { REGION_NAMES, storeList } = require('./storeList');
+
 const client = new DynamoDBClient();
 const dynamoDB = DynamoDBDocumentClient.from(client);
 
-// 地域の表示名マッピング
-const REGION_NAMES = {
-    'kanazawa': '金沢市内',
-    'kaga': '加賀地域',
-    'noto': '能登地域'
-};
-
-// 店舗リスト
-// 注意: IDは store_XXX 形式（3桁ゼロパディング）に統一
-// prescription-manager/src/app/api/stores/route.ts および gacky-bot-KM10/storeList.js と一致させること
-const STORES = [
-    // 金沢市内
-    { id: 'store_005', name: '津幡店', region: 'kanazawa' },
-    { id: 'store_006', name: '鞍月店', region: 'kanazawa' },
-    { id: 'store_007', name: '森本店', region: 'kanazawa' },
-    { id: 'store_008', name: '橋場町店', region: 'kanazawa' },
-    { id: 'store_009', name: '三馬店', region: 'kanazawa' },
-    { id: 'store_010', name: '広岡店', region: 'kanazawa' },
-    { id: 'store_011', name: '金沢駅西口店', region: 'kanazawa' },
-    { id: 'store_013', name: '桜町店', region: 'kanazawa' },
-    { id: 'store_014', name: '若草店', region: 'kanazawa' },
-    { id: 'store_015', name: 'アイリス店', region: 'kanazawa' },
-    { id: 'store_016', name: '泉が丘店', region: 'kanazawa' },
-    { id: 'store_017', name: '中央通町店', region: 'kanazawa' },
-    { id: 'store_018', name: '八日市店', region: 'kanazawa' },
-    { id: 'store_019', name: '平和町店', region: 'kanazawa' },
-    { id: 'store_020', name: '香林坊店', region: 'kanazawa' },
-    { id: 'store_021', name: '無量寺店', region: 'kanazawa' },
-    { id: 'store_022', name: '矢木店', region: 'kanazawa' },
-    { id: 'store_034', name: '押野店', region: 'kanazawa' },
-    { id: 'store_036', name: '北中条店', region: 'kanazawa' },
-    { id: 'store_037', name: '片町店', region: 'kanazawa' },
-    { id: 'store_038', name: 'アルコ店', region: 'kanazawa' },
-    // 加賀地域
-    { id: 'store_003', name: '加賀温泉駅前店', region: 'kaga' },
-    { id: 'store_004', name: '山代店', region: 'kaga' },
-    { id: 'store_029', name: '小馬出店', region: 'kaga' },
-    { id: 'store_030', name: '小松店', region: 'kaga' },
-    { id: 'store_031', name: '軽海店', region: 'kaga' },
-    { id: 'store_032', name: '福留町店', region: 'kaga' },
-    // 能登地域
-    { id: 'store_001', name: '富来店', region: 'noto' },
-    { id: 'store_002', name: '鶴多店', region: 'noto' },
-    { id: 'store_023', name: '徳田店', region: 'noto' },
-    { id: 'store_024', name: '府中店', region: 'noto' },
-    { id: 'store_025', name: '神明店', region: 'noto' },
-    { id: 'store_026', name: '和倉店', region: 'noto' },
-    { id: 'store_027', name: '中島店', region: 'noto' },
-    { id: 'store_028', name: '能登総合病院前店', region: 'noto' },
-    { id: 'store_033', name: '宇出津店', region: 'noto' },
-    { id: 'store_035', name: '輪島店', region: 'noto' }
-];
+// 店舗リストを簡易形式に変換 { id, name, region }
+// 注意: このモジュールではQUOカード受取用に { id, name, region } 形式を使用
+const STORES = storeList.map(store => ({
+  id: store.storeId,
+  name: store.storeName,
+  region: store.region,
+}));
 
 // エラー定数
 const ERRORS = {

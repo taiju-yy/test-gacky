@@ -1,62 +1,49 @@
 /**
  * 店舗API
  * GET: 店舗一覧を取得（DynamoDBから）
+ * 
+ * 店舗データの信頼できる唯一の情報源（Single Source of Truth）:
+ * - DynamoDB: gacky-prescription-stores-{env}
+ * - フォールバック: src/data/stores-fallback.json
+ * 
+ * Note: stores-fallback.json は shared/stores/fallback-data.json のコピーです。
+ *       店舗情報を更新する場合は、両方のファイルを同期してください。
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDynamoDBClient, TABLES, ScanCommand, QueryCommand } from '@/lib/dynamodb';
+import type { Store, StoreFallback } from '@/types/store';
+
+// フォールバック店舗データ（DynamoDBにデータがない場合）
+// グランファルマ株式会社 あおぞら薬局 全38店舗
+import fallbackStoresData from '@/data/stores-fallback.json';
 
 // DynamoDB クライアントを取得
 const getDB = () => getDynamoDBClient();
 
-// フォールバック用の店舗データ（DynamoDBにデータがない場合）
-// グランファルマ株式会社 あおぞら薬局 全38店舗
-const fallbackStores = [
-  { storeId: 'store_001', storeName: '富来店', region: '羽咋郡', postalCode: '925-0446', address: '石川県羽咋郡志賀町富来地頭町七98番地26', latitude: '37.13692067581873', longitude: '136.72962313109466', lineUrl: 'https://line.me/R/ti/p/@266mfaia', phone: '0767-42-2224', mapUrl: '', businessHours: '（月－金） 9:00～18:00\n（土） 　　9:00～13:00' },
-  { storeId: 'store_002', storeName: '鶴多店', region: '羽咋市', postalCode: '925-0027', address: '石川県羽咋市鶴多町亀田4番地5', latitude: '36.89630150298933', longitude: '136.79212236422342', lineUrl: 'https://line.me/R/ti/p/@282xdqri', phone: '0767-22-8931', mapUrl: '', businessHours: '（月、火、水、金、土） 9:00～18:30　\n（木） 　　9:00～17:00' },
-  { storeId: 'store_003', storeName: '加賀温泉駅前店', region: '加賀市', postalCode: '922-0423', address: '石川県加賀市作見町ﾘ28番地1', latitude: '36.317890573778996', longitude: '136.35099657595936', lineUrl: 'https://line.me/R/ti/p/@028pskce', phone: '0761-72-8911', mapUrl: '', businessHours: '（月－金） 9:00～18:00\n（土） 　　9:00～12:00' },
-  { storeId: 'store_004', storeName: '山代店', region: '加賀市', postalCode: '922-0245', address: '石川県加賀市山代温泉山背台1丁目67番地2', latitude: '36.29213764928674', longitude: '136.35894154649822', lineUrl: 'https://line.me/R/ti/p/@302rqvdc', phone: '0761-77-6000', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_005', storeName: '津幡店', region: '河北郡', postalCode: '929-0341', address: '石川県河北郡津幡町字横浜へ35番地1', latitude: '36.66540402096022', longitude: '136.72869423427798', lineUrl: 'https://line.me/R/ti/p/@819fzlhc', phone: '076-289-5855', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_006', storeName: '鞍月店', region: '金沢市', postalCode: '920-8201', address: '石川県金沢市鞍月東1丁目8番地2', latitude: '36.59426624795712', longitude: '136.62962938764983', lineUrl: 'https://line.me/R/ti/p/@590rsdov', phone: '076-237-8938', mapUrl: '', businessHours: '（月－日、祝） 9:00～18:00' },
-  { storeId: 'store_007', storeName: '森本店', region: '金沢市', postalCode: '920-3114', address: '石川県金沢市吉原町ﾊ24番地1', latitude: '36.61211037816509', longitude: '136.69357252071867', lineUrl: 'https://line.me/R/ti/p/@707jbygg', phone: '076-257-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_008', storeName: '橋場町店', region: '金沢市', postalCode: '920-0911', address: '石川県金沢市橋場町3番地15', latitude: '36.57098587704741', longitude: '136.66410245906718', lineUrl: 'https://line.me/R/ti/p/@304zkowb', phone: '076-263-7177', mapUrl: '', businessHours: '（月－土） 8:30～18:00' },
-  { storeId: 'store_009', storeName: '三馬店', region: '金沢市', postalCode: '921-8151', address: '石川県金沢市窪7丁目200番地', latitude: '36.52965520100299', longitude: '136.63710482988694', lineUrl: 'https://line.me/R/ti/p/@064qsrdx', phone: '076-280-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_010', storeName: '広岡店', region: '金沢市', postalCode: '920-0031', address: '石川県金沢市広岡1丁目12番地1', latitude: '36.57628018591524', longitude: '136.6460248839084', lineUrl: 'https://line.me/R/ti/p/@932yqegk', phone: '076-222-2262', mapUrl: '', businessHours: '（月－金） 8:30～17:30　\n（土）　　 8:30～12:30' },
-  { storeId: 'store_011', storeName: '金沢駅西口店', region: '金沢市', postalCode: '920-0031', address: '石川県金沢市広岡一丁目1番5', latitude: '36.57748087530893', longitude: '136.6448392250586', lineUrl: 'https://line.me/R/ti/p/@127eophr', phone: '076-222-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_013', storeName: '桜町店', region: '金沢市', postalCode: '920-0923', address: '石川県金沢市桜町19番23号', latitude: '36.56118865648519', longitude: '136.6775446867525', lineUrl: 'https://line.me/R/ti/p/@508cvene', phone: '076-233-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_014', storeName: '若草店', region: '金沢市', postalCode: '921-8111', address: '石川県金沢市若草町2番地38', latitude: '36.54486794168494', longitude: '136.65679780728482', lineUrl: 'https://line.me/R/ti/p/@351hchfl', phone: '076-243-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_015', storeName: 'アイリス店', region: '金沢市', postalCode: '920-0024', address: '石川県金沢市西念2丁目36番地5', latitude: '36.58702907559102', longitude: '136.63986765439748', lineUrl: 'https://line.me/R/ti/p/@404gpzmr', phone: '076-232-4193', mapUrl: '', businessHours: '（月－金） 9:00～18:00　\n（土）　　 9:00～17:00' },
-  { storeId: 'store_016', storeName: '泉が丘店', region: '金沢市', postalCode: '921-8035', address: '石川県金沢市泉が丘2丁目13番39', latitude: '36.54262190763349', longitude: '136.64434865945776', lineUrl: 'https://line.me/R/ti/p/@382iefwp', phone: '076-245-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_017', storeName: '中央通町店', region: '金沢市', postalCode: '920-0866', address: '石川県金沢市中央通町11番50号', latitude: '36.56407786556738', longitude: '136.64769590324298', lineUrl: 'https://line.me/R/ti/p/@530fnzyw', phone: '076-234-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_018', storeName: '八日市店', region: '金沢市', postalCode: '921-8064', address: '石川県金沢市八日市4丁目364番地', latitude: '36.5494740957765', longitude: '136.60837389586013', lineUrl: 'https://line.me/R/ti/p/@402yvros', phone: '076-240-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_019', storeName: '平和町店', region: '金沢市', postalCode: '921-8105', address: '石川県金沢市平和町3丁目2番地13', latitude: '36.541369094221324', longitude: '136.66258131709472', lineUrl: 'https://line.me/R/ti/p/@080jbtfm', phone: '076-242-2220', mapUrl: '', businessHours: '（月－金） 9:00～18:00\n（土）　　 9:00～12:00' },
-  { storeId: 'store_020', storeName: '香林坊店', region: '金沢市', postalCode: '920-0981', address: '石川県金沢市片町1丁目1番地1', latitude: '36.56193137261904', longitude: '136.65472548455313', lineUrl: 'https://line.me/R/ti/p/@204thuuh', phone: '076-224-8931', mapUrl: '', businessHours: '（月－土） 9:00～19:00' },
-  { storeId: 'store_021', storeName: '無量寺店', region: '金沢市', postalCode: '920-0333', address: '石川県金沢市無量寺5丁目71番地1', latitude: '36.60291660218606', longitude: '136.61236579575345', lineUrl: 'https://line.me/R/ti/p/@011fmcxw', phone: '076-266-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_022', storeName: '矢木店', region: '金沢市', postalCode: '921‐8066', address: '石川県金沢市矢木1丁目44番地', latitude: '36.55420751102454', longitude: '136.5970585798115', lineUrl: 'https://line.me/R/ti/p/@024esmca', phone: '076-269-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_023', storeName: '徳田店', region: '七尾市', postalCode: '926-0824', address: '石川県七尾市下町ﾆ16番地1', latitude: '37.010436080583304', longitude: '136.94434076762883', lineUrl: 'https://line.me/R/ti/p/@150gqbka', phone: '0767-57-0891', mapUrl: '', businessHours: '（月－金） 8:30～18:30\n（木） 　　8:30～17:30\n（土） 　　8:30～14:30' },
-  { storeId: 'store_024', storeName: '府中店', region: '七尾市', postalCode: '926-0042', address: '石川県七尾市作事町58番地2', latitude: '37.04561100690085', longitude: '136.96794188752304', lineUrl: 'https://line.me/R/ti/p/@371lgphm', phone: '0767-54-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:30' },
-  { storeId: 'store_025', storeName: '神明店', region: '七尾市', postalCode: '926-0046', address: '石川県七尾市神明町ロ17番地4', latitude: '37.04245722528676', longitude: '136.96575537856148', lineUrl: 'https://line.me/R/ti/p/@948ppeoe', phone: '0767-53-8931', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_026', storeName: '和倉店', region: '七尾市', postalCode: '926-0171', address: '石川県七尾市石崎町ﾀ部15番地5', latitude: '37.076222725628725', longitude: '136.92424064942898', lineUrl: 'https://line.me/R/ti/p/@316rzbih', phone: '0767-62-8931', mapUrl: '', businessHours: '（月ー土） 9:00～18:00' },
-  { storeId: 'store_027', storeName: '中島店', region: '七尾市', postalCode: '929-2241', address: '石川県七尾市中島町浜田1丁目34番地1', latitude: '37.11328346868235', longitude: '136.85358989824587', lineUrl: 'https://line.me/R/ti/p/@266rnfkj', phone: '0767-66-8888', mapUrl: '', businessHours: '（月－金） 9:00～19:00\n（土） 　　9:00～17:00' },
-  { storeId: 'store_028', storeName: '能登総合病院前店', region: '七尾市', postalCode: '926-0816', address: '石川県七尾市藤橋町ｱ部6番地19', latitude: '37.04442253948692', longitude: '136.94723325357668', lineUrl: 'https://line.me/R/ti/p/@093kncwy', phone: '0767-52-9800', mapUrl: '', businessHours: '（月－金） 8:30～18:00\n（土）　　 8:30～13:00' },
-  { storeId: 'store_029', storeName: '小馬出店', region: '小松市', postalCode: '923-0918', address: '石川県小松市京町54番地2', latitude: '36.40622606618214', longitude: '136.44802717256198', lineUrl: 'https://line.me/R/ti/p/@378voszd', phone: '0761-21-4884', mapUrl: '', businessHours: '（月－金） 9:00～18:00\n（土） 　　9:00～17:00' },
-  { storeId: 'store_030', storeName: '小松店', region: '小松市', postalCode: '923-0961', address: '石川県小松市向本折町ﾎ81番地1', latitude: '36.39929229538969', longitude: '136.44021347149206', lineUrl: 'https://line.me/R/ti/p/@985fualb', phone: '0761-23-2024', mapUrl: '', businessHours: '（月－土） 8:30～18:00' },
-  { storeId: 'store_031', storeName: '軽海店', region: '小松市', postalCode: '923-0825', address: '石川県小松市西軽海町1丁目137番地', latitude: '36.39776161052722', longitude: '136.499765537365', lineUrl: 'https://line.me/R/ti/p/@122focnm', phone: '0761-47-8931', mapUrl: '', businessHours: '（月－金） 9:00～18:00\n（土）　　 9:00～17:00' },
-  { storeId: 'store_032', storeName: '福留町店', region: '白山市', postalCode: '924-0051', address: '石川県白山市福留町173番地1', latitude: '36.490639149075655', longitude: '136.52616202137114', lineUrl: 'https://line.me/R/ti/p/@744nytkq', phone: '076-277-2951', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_033', storeName: '宇出津店', region: '鳳珠郡', postalCode: '927-0433', address: '石川県鳳珠郡能登町宇出津ﾀ56番地5', latitude: '37.30858923794464', longitude: '137.14821052718307', lineUrl: 'https://line.me/R/ti/p/@931dwjlq', phone: '0768-62-8870', mapUrl: '', businessHours: '（月－金） 8:30～18:00\n（土） 　　9:00～13:00' },
-  { storeId: 'store_034', storeName: '押野店', region: '野々市市', postalCode: '921-8802', address: '石川県野々市市押野6丁目174番地', latitude: '36.544560605208346', longitude: '136.61872980305327', lineUrl: 'https://line.me/R/ti/p/@412hckrp', phone: '076-294-3953', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_035', storeName: '輪島店', region: '輪島市', postalCode: '928-0024', address: '石川県輪島市山岸町は27番地', latitude: '37.384682189370515', longitude: '136.9048389135428', lineUrl: 'https://line.me/R/ti/p/@873ezvav', phone: '0768-23-8008', mapUrl: '', businessHours: '（月－日） 8:00～20:00' },
-  { storeId: 'store_036', storeName: '北中条店', region: '河北郡', postalCode: '929-0342', address: '石川県河北郡津幡町北中条2丁目31番地', latitude: '36.66296', longitude: '136.72585', lineUrl: '', phone: '076-204-8920', mapUrl: '', businessHours: '（月－土） 9:00～18:00' },
-  { storeId: 'store_037', storeName: '片町店', region: '金沢市', postalCode: '920-0981', address: '石川県金沢市片町2丁目13番13号', latitude: '36.56032', longitude: '136.65543', lineUrl: '', phone: '076-204-8931', mapUrl: '', businessHours: '（月－土） 8:30～18:00' },
-  { storeId: 'store_038', storeName: 'アルコ店', region: '金沢市', postalCode: '921-8105', address: '石川県金沢市平和町2丁目13番地18', latitude: '36.54203', longitude: '136.66186', lineUrl: '', phone: '076-242-8931', mapUrl: '', businessHours: '（月－金） 9:00～16:00' },
-];
+// フォールバックデータの型変換（lat/lon → latitude/longitude）
+// Note: DynamoDB と fallback JSON では異なるフィールド名を使用しているため変換
+const fallbackStores: Store[] = (fallbackStoresData as StoreFallback[]).map((store) => ({
+  storeId: store.storeId,
+  storeName: store.storeName,
+  region: store.region,
+  postalCode: store.postalCode,
+  address: store.address,
+  latitude: String(store.lat),
+  longitude: String(store.lon),
+  lineUrl: store.lineUrl,
+  phone: store.phone,
+  mapUrl: store.mapUrl,
+  businessHours: store.businessHours,
+  storeNote: store.storeNote || undefined,
+}));
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const region = searchParams.get('region');
 
-    let stores: any[] = [];
+    let stores: Store[] = [];
 
     // まずDynamoDBから店舗データを取得
     try {
@@ -70,13 +57,13 @@ export async function GET(request: NextRequest) {
             ':region': region,
           },
         }));
-        stores = result.Items || [];
+        stores = (result.Items || []) as Store[];
       } else {
         // 全店舗取得
         const result = await getDB().send(new ScanCommand({
           TableName: TABLES.STORES,
         }));
-        stores = result.Items || [];
+        stores = (result.Items || []) as Store[];
       }
     } catch (dbError) {
       console.error('Error fetching from DynamoDB, using fallback:', dbError);
@@ -85,12 +72,12 @@ export async function GET(request: NextRequest) {
     // DynamoDBにデータがない場合はフォールバックを使用
     if (stores.length === 0) {
       stores = region 
-        ? fallbackStores.filter((s) => s.region === region)
+        ? fallbackStores.filter((s: Store) => s.region === region)
         : fallbackStores;
     }
 
     // 店舗名でソート
-    stores.sort((a, b) => a.storeName.localeCompare(b.storeName, 'ja'));
+    stores.sort((a: Store, b: Store) => a.storeName.localeCompare(b.storeName, 'ja'));
 
     return NextResponse.json({
       success: true,
