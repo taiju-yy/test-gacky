@@ -23,6 +23,7 @@ interface ReceptionDetailProps {
   onReactivateSession?: (receptionId: string) => Promise<void>;
   onStartVideoCall?: (receptionId: string) => Promise<string | null>; // ビデオ通話を開始し、ルームURLを返す
   onDeliveryMethodChange?: (receptionId: string, deliveryMethod: DeliveryMethod, notifyCustomer: boolean) => Promise<void>;
+  onStaffNoteUpdate?: (receptionId: string, staffNote: string) => Promise<void>;
   onClose: () => void;
   isAdmin?: boolean; // 管理者かどうか（店舗割振り機能の表示制御用）
 }
@@ -63,6 +64,7 @@ export default function ReceptionDetail({
   onDeliveryMethodChange,
   onClose,
   isAdmin = false,
+  onStaffNoteUpdate,
 }: ReceptionDetailProps) {
   // 店舗名から店舗IDを取得するヘルパー関数
   const getStoreIdByName = (storeName: string | undefined): string => {
@@ -103,6 +105,8 @@ export default function ReceptionDetail({
   const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
   const [cancelConfirmStep, setCancelConfirmStep] = useState<1 | 2>(1);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [noteHasChanges, setNoteHasChanges] = useState(false);
 
   // セッションがタイムアウトしているかどうか判定
   const isSessionTimedOut = reception.messagingSessionStatus === 'closed' && 
@@ -195,6 +199,7 @@ export default function ReceptionDetail({
     
     setSelectedStoreId(newStoreId);
     setStaffNote(reception.staffNote || '');
+    setNoteHasChanges(false); // 受付切り替え時に変更フラグをリセット
   }, [reception.receptionId, reception.selectedStoreId, reception.preferredStoreId, reception.selectedStoreName, reception.staffNote, stores]);
 
   const handleAssign = () => {
@@ -205,6 +210,25 @@ export default function ReceptionDetail({
 
   const handleSendMessageWrapper = async (message: string) => {
     await onSendMessage(reception.receptionId, message);
+  };
+
+  // スタッフメモ変更ハンドラ
+  const handleStaffNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setStaffNote(newValue);
+    setNoteHasChanges(newValue !== (reception.staffNote || ''));
+  };
+
+  // スタッフメモ保存ハンドラ
+  const handleSaveStaffNote = async () => {
+    if (!onStaffNoteUpdate || !noteHasChanges) return;
+    setIsSavingNote(true);
+    try {
+      await onStaffNoteUpdate(reception.receptionId, staffNote);
+      setNoteHasChanges(false);
+    } finally {
+      setIsSavingNote(false);
+    }
   };
 
   return (
@@ -615,16 +639,34 @@ export default function ReceptionDetail({
               )
             )}
 
-            {/* 管理者メモ */}
+            {/* スタッフメモ */}
             <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-2">管理者メモ</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-500">スタッフメモ</h3>
+                {noteHasChanges && (
+                  <span className="text-xs text-orange-600">未保存の変更があります</span>
+                )}
+              </div>
               <textarea
                 value={staffNote}
-                onChange={(e) => setStaffNote(e.target.value)}
-                placeholder="店舗への申し送り事項など"
+                onChange={handleStaffNoteChange}
+                placeholder="申し送り事項やお客様情報などのメモ"
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-sm"
                 rows={2}
               />
+              {onStaffNoteUpdate && (
+                <button
+                  onClick={handleSaveStaffNote}
+                  disabled={isSavingNote || !noteHasChanges}
+                  className={`mt-2 w-full px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+                    isSavingNote || !noteHasChanges
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {isSavingNote ? 'メモを保存中...' : 'メモを保存'}
+                </button>
+              )}
             </div>
 
             {/* ステータス変更 */}

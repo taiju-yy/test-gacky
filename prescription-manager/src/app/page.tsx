@@ -788,6 +788,58 @@ export default function Dashboard() {
     }
   };
 
+  // スタッフメモ更新ハンドラ
+  const handleStaffNoteUpdate = async (receptionId: string, staffNote: string) => {
+    const reception = receptions.find((r) => r.receptionId === receptionId);
+    if (!reception) return;
+
+    // 楽観的更新
+    setReceptions((prev) =>
+      prev.map((r) =>
+        r.receptionId === receptionId
+          ? {
+              ...r,
+              staffNote,
+            }
+          : r
+      )
+    );
+
+    if (selectedReception?.receptionId === receptionId) {
+      setSelectedReception((prev) =>
+        prev
+          ? {
+              ...prev,
+              staffNote,
+            }
+          : null
+      );
+    }
+
+    // API呼び出し
+    try {
+      const response = await fetch(`/api/receptions/${receptionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateNote',
+          timestamp: reception.timestamp,
+          staffNote,
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Failed to update staff note:', data.error);
+        // エラー時はリフェッチ
+        fetchReceptions();
+      }
+    } catch (err) {
+      console.error('Error updating staff note:', err);
+      fetchReceptions();
+    }
+  };
+
   // ビデオ通話開始ハンドラ
   const handleStartVideoCall = async (receptionId: string): Promise<string | null> => {
     const reception = receptions.find((r) => r.receptionId === receptionId);
@@ -975,6 +1027,7 @@ export default function Dashboard() {
                 onReactivateSession={handleReactivateSession}
                 onDeliveryMethodChange={handleDeliveryMethodChange}
                 onStartVideoCall={handleStartVideoCall}
+                onStaffNoteUpdate={handleStaffNoteUpdate}
                 onClose={() => setSelectedReception(null)}
                 isAdmin={isAdmin}
               />
