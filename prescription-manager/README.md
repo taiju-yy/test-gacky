@@ -168,6 +168,9 @@ VAPID_SUBJECT=mailto:admin@granpharma.co.jp
 SES_FROM_EMAIL=noreply@granpharma.co.jp
 ADMIN_EMAIL_ADDRESSES=admin1@granpharma.co.jp,admin2@granpharma.co.jp
 PRESCRIPTION_MANAGER_URL=https://your-amplify-app-url.amplifyapp.com
+
+# 住所検索機能（Geocoding API）
+GOOGLE_MAPS_API_KEY=<Google Maps APIキー>
 ```
 
 ### Web App (Amplify)

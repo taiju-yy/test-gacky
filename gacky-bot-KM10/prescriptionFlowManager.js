@@ -1424,13 +1424,76 @@ async function getUserStoreHistory(userId, limit = 5) {
 }
 
 /**
- * 住所から店舗を検索（簡易的な実装）
- * 
- * 本格的な実装では、Geocoding APIを使用して住所を座標に変換し、
- * 最寄りの店舗を検索する
+ * Google Maps Geocoding APIを使用して住所から座標を取得
+ * @param {string} address - 住所文字列
+ * @returns {Promise<{lat: number, lon: number} | null>} 座標またはnull
  */
-async function searchStoresByAddress(address) {
-  // 住所のキーワードマッチング（簡易実装）
+async function geocodeAddress(address) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  
+  if (!apiKey) {
+    console.warn('GOOGLE_MAPS_API_KEY is not set, falling back to region-based search');
+    return null;
+  }
+
+  try {
+    // 石川県を優先するため、住所に「石川県」を追加（まだ含まれていない場合）
+    const searchAddress = address.includes('石川県') ? address : `石川県${address}`;
+    
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchAddress)}&key=${apiKey}&language=ja&region=jp`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const location = data.results[0].geometry.location;
+      console.log(`Geocoded "${address}" to lat: ${location.lat}, lon: ${location.lng}`);
+      return {
+        lat: location.lat,
+        lon: location.lng
+      };
+    } else {
+      console.warn(`Geocoding failed for "${address}": ${data.status}`);
+      return null;
+    }
+  } catch (error) {
+    console.error('Geocoding API error:', error);
+    return null;
+  }
+}
+
+/**
+ * 住所から店舗を検索
+ * 
+ * Google Maps Geocoding APIを使用して住所を座標に変換し、
+ * 最寄りの店舗を距離順で返す
+ * 
+ * @param {string} address - 検索住所
+ * @param {number} limit - 取得件数（デフォルト5）
+ * @returns {Promise<Array>} 距離付き店舗リスト（近い順）
+ */
+async function searchStoresByAddress(address, limit = 5) {
+  // 1. Geocoding APIで座標を取得
+  const coords = await geocodeAddress(address);
+  
+  if (coords) {
+    // 2. 座標から最寄り店舗を取得（距離付き）
+    const nearestStores = getNearestStores(coords.lat, coords.lon, limit);
+    console.log(`Found ${nearestStores.length} nearest stores for address: "${address}"`);
+    return nearestStores;
+  }
+  
+  // 3. Geocodingが失敗した場合は地域ベースのフォールバック
+  console.log(`Falling back to region-based search for address: "${address}"`);
+  return searchStoresByRegion(address);
+}
+
+/**
+ * 地域名による店舗検索（フォールバック）
+ * @param {string} address - 住所文字列
+ * @returns {Array} 店舗リスト
+ */
+function searchStoresByRegion(address) {
   const addressLower = address.toLowerCase();
   
   // 地域判定
