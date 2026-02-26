@@ -258,7 +258,7 @@ export default function Header({ stores = [], onStoreChange }: HeaderProps) {
                   <option value="">店舗を選択してください</option>
                   {stores.map((store) => (
                     <option key={store.storeId} value={store.storeId}>
-                      {formatStoreName(store.storeName)}（{store.region}）
+                      {formatStoreName(store.storeName)}
                     </option>
                   ))}
                 </select>
