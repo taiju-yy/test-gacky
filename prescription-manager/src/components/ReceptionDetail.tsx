@@ -24,6 +24,9 @@ interface ReceptionDetailProps {
   onStartVideoCall?: (receptionId: string) => Promise<string | null>; // ビデオ通話を開始し、ルームURLを返す
   onDeliveryMethodChange?: (receptionId: string, deliveryMethod: DeliveryMethod, notifyCustomer: boolean) => Promise<void>;
   onStaffNoteUpdate?: (receptionId: string, staffNote: string) => Promise<void>;
+  onRefreshMessages?: () => void; // メッセージを再取得するコールバック
+  onClearUnread?: () => void; // 未読数をクリアするコールバック
+  onMessageTabChange?: (isActive: boolean) => void; // メッセージタブの表示状態が変わったとき
   onClose: () => void;
   isAdmin?: boolean; // 管理者かどうか（店舗割振り機能の表示制御用）
 }
@@ -65,6 +68,9 @@ export default function ReceptionDetail({
   onClose,
   isAdmin = false,
   onStaffNoteUpdate,
+  onRefreshMessages,
+  onClearUnread,
+  onMessageTabChange,
 }: ReceptionDetailProps) {
   // 店舗名から店舗IDを取得するヘルパー関数
   const getStoreIdByName = (storeName: string | undefined): string => {
@@ -278,7 +284,13 @@ export default function ReceptionDetail({
       {/* タブ切り替え */}
       <div className="flex border-b border-gray-100 flex-shrink-0">
         <button
-          onClick={() => setActiveTab('info')}
+          onClick={() => {
+            setActiveTab('info');
+            // 受付情報タブに切り替えたことを親に通知
+            if (onMessageTabChange) {
+              onMessageTabChange(false);
+            }
+          }}
           className={`flex-1 py-3 text-sm font-medium transition-colors ${
             activeTab === 'info'
               ? 'text-blue-600 border-b-2 border-blue-600'
@@ -288,7 +300,21 @@ export default function ReceptionDetail({
           受付情報
         </button>
         <button
-          onClick={() => setActiveTab('message')}
+          onClick={() => {
+            setActiveTab('message');
+            // メッセージタブに切り替えたことを親に通知
+            if (onMessageTabChange) {
+              onMessageTabChange(true);
+            }
+            // メッセージタブをクリックしたときにメッセージを再取得
+            if (onRefreshMessages) {
+              onRefreshMessages();
+            }
+            // 未読数をクリア（左カラムの未読マークを消す）
+            if (onClearUnread) {
+              onClearUnread();
+            }
+          }}
           className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
             activeTab === 'message'
               ? 'text-blue-600 border-b-2 border-blue-600'
@@ -612,7 +638,7 @@ export default function ReceptionDetail({
                   <option value="">店舗を選択してください</option>
                   {stores.map((store) => (
                     <option key={store.storeId} value={store.storeId}>
-                      {formatStoreName(store.storeName)}（{store.region}）
+                      {formatStoreName(store.storeName)}
                     </option>
                   ))}
                 </select>

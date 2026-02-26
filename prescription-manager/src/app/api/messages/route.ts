@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { receptionId, messageIds } = body;
+    const { receptionId, messageIds, receptionTimestamp } = body;
 
     if (!receptionId || !messageIds || !Array.isArray(messageIds)) {
       return NextResponse.json(
@@ -217,6 +217,28 @@ export async function PATCH(request: NextRequest) {
         }))
       )
     );
+
+    // 受付テーブルの未読数も更新（0にリセット）
+    // receptionTimestamp が渡されている場合のみ更新
+    if (receptionTimestamp) {
+      try {
+        await getDB().send(new UpdateCommand({
+          TableName: TABLES.PRESCRIPTIONS,
+          Key: {
+            receptionId,
+            timestamp: receptionTimestamp,
+          },
+          UpdateExpression: 'SET unreadMessageCount = :count',
+          ExpressionAttributeValues: {
+            ':count': 0,
+          },
+        }));
+        console.log(`[Messages API] Reset unreadMessageCount for reception ${receptionId}`);
+      } catch (updateError) {
+        console.error('Error resetting unreadMessageCount:', updateError);
+        // 未読数の更新に失敗してもメッセージの既読更新は成功としてる
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -428,7 +428,25 @@ async function routeMessageToStore(userId, receptionId, messageContent, messageT
       },
     }));
 
-    // TODO: 店舗への通知（WebSocket、Push通知など）
+    // 店舗スタッフへリアルタイム通知を送信
+    try {
+      const reception = await getReceptionById(receptionId);
+      if (reception && reception.selectedStoreId) {
+        const { sendNewMessageNotification } = require('./notificationManager');
+        await sendNewMessageNotification({
+          receptionId,
+          userId,
+          userDisplayName: senderName,
+          selectedStoreId: reception.selectedStoreId,
+          selectedStoreName: reception.selectedStoreName,
+          messageContent,
+          messageType,
+        });
+      }
+    } catch (notifyError) {
+      // 通知失敗でもメッセージルーティングは継続
+      console.error('Error sending message notification (non-blocking):', notifyError);
+    }
 
     return {
       success: true,
