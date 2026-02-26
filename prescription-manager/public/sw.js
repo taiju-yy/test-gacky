@@ -5,7 +5,7 @@
  */
 
 // Service Worker のバージョン（更新時に変更）
-const SW_VERSION = '1.0.5';
+const SW_VERSION = '1.1.0';
 
 // Service Worker インストール時
 self.addEventListener('install', (event) => {
@@ -36,6 +36,7 @@ self.addEventListener('push', (event) => {
     data: {
       url: '/',
       receptionId: null,
+      type: 'new_prescription',
     },
   };
 
@@ -58,11 +59,15 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  // 通知タイプを判定
+  const notificationType = data.data?.type || 'new_prescription';
+  const isMessageNotification = notificationType === 'new_message';
+
   const options = {
     body: data.body,
     icon: data.icon || '/notification-icon.png',
     badge: data.badge || '/notification-badge.png',
-    tag: data.tag || 'prescription-notification',
+    tag: data.tag || (isMessageNotification ? `message-${data.data?.receptionId || 'unknown'}` : 'prescription-notification'),
     renotify: data.renotify !== false,
     // macOS の制限: requireInteraction: true だとクリックイベントが発火しない
     // false にして、通知クリックでアプリを開けるようにする
@@ -81,11 +86,14 @@ self.addEventListener('push', (event) => {
       
       // 開いているタブにメッセージを送信してリストを更新させる
       const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      console.log('[Service Worker] Notifying', clientList.length, 'client(s) about new prescription');
+      console.log('[Service Worker] Notifying', clientList.length, 'client(s) about', notificationType);
+      
+      // 通知タイプに応じたメッセージを送信
+      const messageType = isMessageNotification ? 'NEW_MESSAGE' : 'NEW_PRESCRIPTION';
       
       for (const client of clientList) {
         client.postMessage({
-          type: 'NEW_PRESCRIPTION',
+          type: messageType,
           data: data.data,
         });
       }

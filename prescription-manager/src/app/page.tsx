@@ -69,6 +69,13 @@ export default function Dashboard() {
   
   // SP表示時の詳細パネルへのスクロール用ref
   const detailPanelRef = useRef<HTMLDivElement>(null);
+  
+  // 選択中の受付をrefで追跡（useEffect内のクロージャで最新値を参照するため）
+  const selectedReceptionRef = useRef<PrescriptionReception | null>(null);
+  selectedReceptionRef.current = selectedReception;
+  
+  // メッセージタブが表示中かどうかを追跡（NEW_MESSAGEイベントで既読処理を行うかどうかの判定に使用）
+  const isMessageTabActiveRef = useRef<boolean>(false);
 
   // 認証情報
   const { user, isAuthenticated, isLoading: authLoading, isAdmin, isStoreStaff, hasStoreAssigned, setSelectedStore } = useAuth();
@@ -109,15 +116,27 @@ export default function Dashboard() {
       if (data.success) {
         // フロントエンドでタイムアウトチェックを適用
         const receptionsWithTimeoutCheck = data.data.map(checkSessionTimeout);
-        setReceptions(receptionsWithTimeoutCheck);
         
-        // 選択中の受付も更新（タイムアウトチェック含む）
+        // メッセージタブが表示中の場合のみ、選択中の受付の未読数を0に保持
+        const currentSelectedReception = selectedReceptionRef.current;
+        const isMessageTabActive = isMessageTabActiveRef.current;
+        const updatedReceptions = receptionsWithTimeoutCheck.map((r: PrescriptionReception) => {
+          if (currentSelectedReception && r.receptionId === currentSelectedReception.receptionId && isMessageTabActive) {
+            // メッセージタブ表示中の受付は未読数を0に保持（既読処理済みの想定）
+            return { ...r, unreadMessageCount: 0 };
+          }
+          return r;
+        });
+        
+        setReceptions(updatedReceptions);
+        
+        // 選択中の受付も更新（タイムアウトチェック含む、未読数の保持ロジック適用済み）
         setSelectedReception((prev) => {
           if (!prev) return null;
-          const updated = receptionsWithTimeoutCheck.find(
+          const updated = updatedReceptions.find(
             (r: PrescriptionReception) => r.receptionId === prev.receptionId
           );
-          return updated ? checkSessionTimeout(updated) : prev;
+          return updated ? updated : prev;
         });
         
         setError(null);
@@ -207,7 +226,7 @@ export default function Dashboard() {
     };
 
     // Service Worker からのメッセージを受け取る
-    const handleServiceWorkerMessage = (event: MessageEvent) => {
+    const handleServiceWorkerMessage = async (event: MessageEvent) => {
       console.log('[Dashboard] Service Worker message received:', event.data?.type);
       
       if (event.data?.type === 'NOTIFICATION_CLICKED') {
@@ -222,6 +241,9 @@ export default function Dashboard() {
           const url = new URL(window.location.href);
           url.searchParams.set('receptionId', receptionId);
           window.history.replaceState({}, '', url.toString());
+          
+          // 該当する受付のメッセージも取得
+          fetchMessages(receptionId);
         }
       } else if (event.data?.type === 'NEW_PRESCRIPTION') {
         // 新しい処方箋が届いた場合、リストを即時更新
@@ -229,6 +251,82 @@ export default function Dashboard() {
         fetchReceptions();
         
         // 通知音を鳴らす（タブが開いている場合）
+        playNotificationSound();
+      } else if (event.data?.type === 'NEW_MESSAGE') {
+        // お客様からの新しいメッセージが届いた場合
+        const receptionId = event.data?.data?.receptionId;
+        console.log('[Dashboard] New message received for reception:', receptionId);
+        
+        // 選択中の受付と一致する場合
+        const currentSelectedReception = selectedReceptionRef.current;
+        if (receptionId && currentSelectedReception?.receptionId === receptionId) {
+          console.log('[Dashboard] Message is for currently selected reception');
+          
+          // メッセージタブが表示中の場合のみ、メッセージを取得して既読処理
+          if (isMessageTabActiveRef.current) {
+            console.log('[Dashboard] Message tab is active, fetching and marking as read');
+            try {
+              const response = await fetch(`/api/messages?receptionId=${receptionId}`);
+              const data = await response.json();
+              
+              if (data.success) {
+                const messageList = data.data as PrescriptionMessage[];
+                setMessages((prev) => ({
+                  ...prev,
+                  [receptionId]: messageList,
+                }));
+                
+                // 未読メッセージを既読に更新（サーバー側の未読数も更新）
+                const unreadMessageIds = messageList
+                  .filter((msg: PrescriptionMessage) => msg.senderType === 'customer' && !msg.readByStore)
+                  .map((msg: PrescriptionMessage) => msg.messageId);
+                
+                if (unreadMessageIds.length > 0 && currentSelectedReception) {
+                  await fetch('/api/messages', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      receptionId,
+                      messageIds: unreadMessageIds,
+                      receptionTimestamp: currentSelectedReception.timestamp,
+                    }),
+                  });
+                  console.log(`[Dashboard] Marked ${unreadMessageIds.length} messages as read`);
+                }
+              }
+            } catch (err) {
+              console.error('[Dashboard] Error fetching messages:', err);
+            }
+            // メッセージタブ表示中なので未読数は0のまま
+          } else {
+            // 受付情報タブが表示中の場合、未読数を増やす
+            console.log('[Dashboard] Info tab is active, incrementing unread count');
+            setReceptions((prev) =>
+              prev.map((r) =>
+                r.receptionId === receptionId
+                  ? { ...r, unreadMessageCount: (r.unreadMessageCount || 0) + 1 }
+                  : r
+              )
+            );
+            // selectedReception も同時に更新（同期を保つ）
+            setSelectedReception((prev) =>
+              prev && prev.receptionId === receptionId
+                ? { ...prev, unreadMessageCount: (prev.unreadMessageCount || 0) + 1 }
+                : prev
+            );
+          }
+        } else if (receptionId) {
+          // 選択中でない受付の場合、未読数を増やす（ローカルで +1）
+          setReceptions((prev) =>
+            prev.map((r) =>
+              r.receptionId === receptionId
+                ? { ...r, unreadMessageCount: (r.unreadMessageCount || 0) + 1 }
+                : r
+            )
+          );
+        }
+        
+        // 通知音を鳴らす
         playNotificationSound();
       }
     };
@@ -238,7 +336,7 @@ export default function Dashboard() {
     return () => {
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
     };
-  }, [isAuthenticated, fetchReceptions]);
+  }, [isAuthenticated, fetchReceptions, fetchMessages]);
 
   // ポーリングは廃止
   // リアルタイム通知（Web Push）により、新規受付は即座に通知されるため
@@ -320,6 +418,12 @@ export default function Dashboard() {
   const selectedReceptionMessages = selectedReception
     ? messages[selectedReception.receptionId] || []
     : [];
+
+  // receptions 配列から最新の選択中の受付データを取得
+  // これにより、receptions を更新すれば ReceptionDetail にも自動的に反映される
+  const currentSelectedReception = selectedReception
+    ? receptions.find((r) => r.receptionId === selectedReception.receptionId) || selectedReception
+    : null;
 
   // ステータス変更ハンドラ
   const handleStatusChange = async (receptionId: string, newStatus: ReceptionStatus) => {
@@ -595,7 +699,7 @@ export default function Dashboard() {
   };
 
   // メッセージを既読にするAPI呼び出し
-  const markMessagesAsRead = useCallback(async (receptionId: string, messageList: PrescriptionMessage[]) => {
+  const markMessagesAsRead = useCallback(async (receptionId: string, messageList: PrescriptionMessage[], receptionTimestamp?: string) => {
     const unreadMessageIds = messageList
       .filter((msg) => msg.senderType === 'customer' && !msg.readByStore)
       .map((msg) => msg.messageId);
@@ -608,6 +712,7 @@ export default function Dashboard() {
           body: JSON.stringify({
             receptionId,
             messageIds: unreadMessageIds,
+            receptionTimestamp, // 受付テーブルの未読数を更新するために必要
           }),
         });
         console.log(`Marked ${unreadMessageIds.length} messages as read for ${receptionId}`);
@@ -623,6 +728,9 @@ export default function Dashboard() {
     const checkedReception = checkSessionTimeout(reception);
     setSelectedReception(checkedReception);
     
+    // 受付を選択したときは初期状態が「受付情報」タブなのでfalseに設定
+    isMessageTabActiveRef.current = false;
+    
     // SP表示時は詳細パネルまでスクロール
     if (window.innerWidth < 1024 && detailPanelRef.current) {
       // 少し遅延してレンダリング完了後にスクロール
@@ -631,18 +739,7 @@ export default function Dashboard() {
       }, 100);
     }
     
-    // 未読数を即座にUIからクリア（楽観的更新）
-    if (reception.unreadMessageCount && reception.unreadMessageCount > 0) {
-      setReceptions((prev) =>
-        prev.map((r) =>
-          r.receptionId === reception.receptionId
-            ? { ...r, unreadMessageCount: 0 }
-            : r
-        )
-      );
-    }
-    
-    // メッセージを取得してから既読更新を実行
+    // メッセージを取得（既読処理はメッセージタブをクリックしたときに行う）
     try {
       const response = await fetch(`/api/messages?receptionId=${reception.receptionId}`);
       const data = await response.json();
@@ -656,17 +753,8 @@ export default function Dashboard() {
           [reception.receptionId]: messageList,
         }));
         
-        // メッセージの既読状態をUIで更新
-        setMessages((prev) => ({
-          ...prev,
-          [reception.receptionId]: (prev[reception.receptionId] || []).map((msg) => ({
-            ...msg,
-            readByStore: true,
-          })),
-        }));
-        
-        // API呼び出しで既読状態をDB更新
-        await markMessagesAsRead(reception.receptionId, messageList);
+        // 注意: 既読処理はここでは行わない
+        // メッセージタブをクリックしたときに onRefreshMessages で既読処理を行う
       }
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -1016,9 +1104,9 @@ export default function Dashboard() {
 
           {/* 詳細パネル - PC表示時は独立スクロール */}
           <div ref={detailPanelRef} className="lg:overflow-y-auto lg:h-full">
-            {selectedReception ? (
+            {currentSelectedReception ? (
               <ReceptionDetail
-                reception={selectedReception}
+                reception={currentSelectedReception}
                 stores={stores}
                 messages={selectedReceptionMessages}
                 onStatusChange={handleStatusChange}
@@ -1028,7 +1116,47 @@ export default function Dashboard() {
                 onDeliveryMethodChange={handleDeliveryMethodChange}
                 onStartVideoCall={handleStartVideoCall}
                 onStaffNoteUpdate={handleStaffNoteUpdate}
-                onClose={() => setSelectedReception(null)}
+                onRefreshMessages={async () => {
+                  if (!currentSelectedReception) return;
+                  // メッセージを取得
+                  const response = await fetch(`/api/messages?receptionId=${currentSelectedReception.receptionId}`);
+                  const data = await response.json();
+                  
+                  if (data.success) {
+                    const messageList = data.data as PrescriptionMessage[];
+                    setMessages((prev) => ({
+                      ...prev,
+                      [currentSelectedReception.receptionId]: messageList,
+                    }));
+                    
+                    // 未読メッセージを既読に更新（サーバー側の未読数も更新）
+                    await markMessagesAsRead(currentSelectedReception.receptionId, messageList, currentSelectedReception.timestamp);
+                  }
+                }}
+                onClearUnread={() => {
+                  if (!currentSelectedReception) return;
+                  // 選択中の受付の未読数をクリア（左カラムの未読マークを消す）
+                  setReceptions((prev) =>
+                    prev.map((r) =>
+                      r.receptionId === currentSelectedReception.receptionId
+                        ? { ...r, unreadMessageCount: 0 }
+                        : r
+                    )
+                  );
+                  // selectedReception も同時に更新（同期を保つ）
+                  setSelectedReception((prev) =>
+                    prev ? { ...prev, unreadMessageCount: 0 } : null
+                  );
+                }}
+                onMessageTabChange={(isActive) => {
+                  // メッセージタブの表示状態を追跡
+                  isMessageTabActiveRef.current = isActive;
+                }}
+                onClose={() => {
+                  setSelectedReception(null);
+                  // 受付を閉じたらメッセージタブの状態をリセット
+                  isMessageTabActiveRef.current = false;
+                }}
                 isAdmin={isAdmin}
               />
             ) : (

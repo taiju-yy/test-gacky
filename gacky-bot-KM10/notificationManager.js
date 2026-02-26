@@ -342,8 +342,73 @@ async function sendEmailToAdmins({ subject, receptionId, userDisplayName, select
   return { sent, failed };
 }
 
+/**
+ * お客様からのメッセージ受信時の通知を送信
+ * 
+ * @param {Object} params - 通知パラメータ
+ * @param {string} params.receptionId - 受付ID
+ * @param {string} params.userId - お客様のLINE ユーザーID
+ * @param {string} params.userDisplayName - お客様の表示名
+ * @param {string} params.selectedStoreId - 担当店舗ID
+ * @param {string} params.selectedStoreName - 担当店舗名
+ * @param {string} params.messageContent - メッセージ内容（テキストの場合）
+ * @param {string} params.messageType - メッセージタイプ ('text' | 'image' など)
+ */
+async function sendNewMessageNotification(params) {
+  const {
+    receptionId,
+    userDisplayName,
+    selectedStoreId,
+    selectedStoreName,
+    messageContent,
+    messageType,
+  } = params;
+
+  console.log(`[Notification] Sending message notification for reception ${receptionId}, store: ${selectedStoreId || 'not assigned'}`);
+
+  const results = {
+    pushNotifications: { sent: 0, failed: 0 },
+  };
+
+  // 店舗が割り当てられていない場合は通知しない
+  if (!selectedStoreId) {
+    console.log('[Notification] No store assigned, skipping message notification');
+    return results;
+  }
+
+  // メッセージ内容を通知用に整形
+  let bodyText = '';
+  if (messageType === 'text') {
+    // テキストメッセージは最初の50文字まで表示
+    bodyText = messageContent && messageContent.length > 50 
+      ? messageContent.substring(0, 50) + '...'
+      : messageContent || 'メッセージ';
+  } else if (messageType === 'image') {
+    bodyText = '📷 画像を送信しました';
+  } else {
+    bodyText = '新しいメッセージ';
+  }
+
+  const pushResult = await sendPushNotificationToStore(selectedStoreId, {
+    title: `💬 ${userDisplayName || 'お客様'}からメッセージ`,
+    body: bodyText,
+    data: {
+      url: `/?receptionId=${receptionId}`,
+      receptionId,
+      type: 'new_message',
+    },
+    // メッセージ通知用のタグ（処方箋通知とは別のタグを使用）
+    tag: `message-${receptionId}`,
+  });
+  results.pushNotifications = pushResult;
+
+  console.log(`[Notification] Message notification results for ${receptionId}:`, JSON.stringify(results));
+  return results;
+}
+
 module.exports = {
   sendNewPrescriptionNotification,
+  sendNewMessageNotification,
   sendPushNotificationToStore,
   sendPushNotificationToAdmins,
   sendEmailToAdmins,
