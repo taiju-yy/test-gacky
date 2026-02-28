@@ -9,6 +9,124 @@
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 
 /**
+ * デバイス・ブラウザ検出結果の型定義
+ */
+export interface DeviceInfo {
+  isIOS: boolean;           // iOS/iPadOS デバイスか
+  isIPad: boolean;          // iPad か
+  isIPhone: boolean;        // iPhone か
+  isPWA: boolean;           // PWA（ホーム画面から起動）モードか
+  isSafari: boolean;        // Safari ブラウザか
+  isMacSafari: boolean;     // Mac Safari か
+}
+
+/**
+ * 通知サポート状況の型定義
+ */
+export interface NotificationSupportInfo {
+  isSupported: boolean;                    // 通知がサポートされているか
+  requiresPWA: boolean;                    // PWA が必要か（iOS/iPadOS Safari）
+  canEnableWithPWA: boolean;               // PWA にすれば通知可能か
+  device: DeviceInfo;                      // デバイス情報
+  message?: string;                        // ユーザーへのメッセージ
+}
+
+/**
+ * デバイス・ブラウザ情報を検出
+ */
+export function detectDevice(): DeviceInfo {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      isIOS: false,
+      isIPad: false,
+      isIPhone: false,
+      isPWA: false,
+      isSafari: false,
+      isMacSafari: false,
+    };
+  }
+
+  const ua = navigator.userAgent;
+  
+  // iOS/iPadOS 検出
+  // iPad は iPadOS 13以降、デスクトップモードがデフォルトで navigator.platform が "MacIntel" になる場合がある
+  const isIPhone = /iPhone/.test(ua);
+  const isIPadUA = /iPad/.test(ua);
+  // iPad の追加検出（iPadOS 13以降対応）
+  const isIPadTouch = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  const isIPad = isIPadUA || isIPadTouch;
+  const isIOS = isIPhone || isIPad;
+  
+  // Safari 検出（Chrome、Edge、Firefox などを除外）
+  const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+  
+  // Mac Safari 検出（iOS デバイスを除外）
+  const isMacSafari = isSafari && !isIOS && /Macintosh/.test(ua);
+  
+  // PWA モード検出（ホーム画面から起動）
+  // iOS Safari では navigator.standalone、その他は display-mode: standalone
+  const isStandalone = 
+    // iOS Safari の PWA 判定
+    ('standalone' in navigator && (navigator as Navigator & { standalone?: boolean }).standalone === true) ||
+    // その他のブラウザ（Chrome、Edge など）の PWA 判定
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches;
+  
+  return {
+    isIOS,
+    isIPad,
+    isIPhone,
+    isPWA: isStandalone,
+    isSafari,
+    isMacSafari,
+  };
+}
+
+/**
+ * 通知サポート状況を詳細に取得
+ */
+export function getNotificationSupportInfo(): NotificationSupportInfo {
+  const device = detectDevice();
+  
+  // 基本的な API サポートチェック
+  const hasBasicSupport = 
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window;
+  
+  // iOS/iPadOS Safari の場合
+  if (device.isIOS && device.isSafari) {
+    if (device.isPWA) {
+      // PWA モードで起動している場合は通知可能
+      return {
+        isSupported: hasBasicSupport,
+        requiresPWA: true,
+        canEnableWithPWA: true,
+        device,
+      };
+    } else {
+      // ブラウザモードでは通知不可、PWA にすれば可能
+      return {
+        isSupported: false,
+        requiresPWA: true,
+        canEnableWithPWA: true,
+        device,
+        message: 'iOS/iPadOS の Safari では、ホーム画面に追加してアプリとして起動すると通知を受け取れます。',
+      };
+    }
+  }
+  
+  // Mac Safari やその他のブラウザ
+  return {
+    isSupported: hasBasicSupport,
+    requiresPWA: false,
+    canEnableWithPWA: false,
+    device,
+  };
+}
+
+/**
  * Base64 URL文字列をUint8Arrayに変換
  */
 function urlBase64ToUint8Array(base64String: string): BufferSource {
@@ -29,13 +147,11 @@ function urlBase64ToUint8Array(base64String: string): BufferSource {
 
 /**
  * Service Worker がサポートされているか確認
+ * 注意: iOS/iPadOS では PWA モードでのみ true を返す
  */
 export function isPushNotificationSupported(): boolean {
-  return (
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    'Notification' in window
-  );
+  const supportInfo = getNotificationSupportInfo();
+  return supportInfo.isSupported;
 }
 
 /**
