@@ -1,5 +1,5 @@
 const sharp = require('sharp');
-const storeList = require('./storeList.js');
+const { storeList } = require('./storeList.js');
 const { isPrescriptionFlowRelated } = require('./fetchClaudeResponse');
 const { getImageContent } = require('./fetchImage');
 const {
