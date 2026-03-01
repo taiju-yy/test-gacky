@@ -65,6 +65,7 @@ export default function Dashboard() {
   const [selectedReception, setSelectedReception] = useState<PrescriptionReception | null>(null);
   const [filterStatus, setFilterStatus] = useState<ReceptionStatus | 'all'>('all');
   const [filterTodayOnly, setFilterTodayOnly] = useState(false); // 本日のみフィルター
+  const [filterUnreadOnly, setFilterUnreadOnly] = useState(false); // 未読メッセージありのみフィルター
   const [messages, setMessages] = useState<Record<string, PrescriptionMessage[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -470,6 +471,11 @@ export default function Dashboard() {
   const filteredReceptions = receptions.filter((r) => {
     // 本日のみフィルターが有効な場合
     if (filterTodayOnly && !isToday(r.timestamp)) {
+      return false;
+    }
+    
+    // 未読メッセージありのみフィルターが有効な場合
+    if (filterUnreadOnly && (!r.unreadMessageCount || r.unreadMessageCount === 0)) {
       return false;
     }
     
@@ -1152,9 +1158,10 @@ export default function Dashboard() {
                 badge={adminStats.pendingCount > 0 ? '要対応' : undefined}
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending');
                 }}
-                active={filterStatus === 'pending' && !filterTodayOnly}
+                active={filterStatus === 'pending' && !filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="対応中"
@@ -1164,9 +1171,10 @@ export default function Dashboard() {
                 color="purple"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing');
                 }}
-                active={filterStatus === 'preparing' && !filterTodayOnly}
+                active={filterStatus === 'preparing' && !filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="準備完了"
@@ -1176,9 +1184,10 @@ export default function Dashboard() {
                 color="green"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready');
                 }}
-                active={filterStatus === 'ready' && !filterTodayOnly}
+                active={filterStatus === 'ready' && !filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="配送中"
@@ -1188,6 +1197,7 @@ export default function Dashboard() {
                 color="indigo"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus('all');
                 }}
                 active={false}
@@ -1202,6 +1212,7 @@ export default function Dashboard() {
                 icon="calendar"
                 color="blue"
                 onClick={() => {
+                  setFilterUnreadOnly(false);
                   if (filterTodayOnly) {
                     setFilterTodayOnly(false);
                     setFilterStatus('all');
@@ -1210,7 +1221,7 @@ export default function Dashboard() {
                     setFilterStatus('all');
                   }
                 }}
-                active={filterTodayOnly}
+                active={filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="本日の完了"
@@ -1218,7 +1229,11 @@ export default function Dashboard() {
                 value={adminStats.todayCompletedCount}
                 icon="chart"
                 color="green"
-                onClick={() => setFilterStatus('all')}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
+                  setFilterStatus('all');
+                }}
                 active={false}
               />
               <StatCard
@@ -1229,10 +1244,17 @@ export default function Dashboard() {
                 color={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? 'orange' : 'blue'}
                 badge={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? '要確認' : undefined}
                 onClick={() => {
-                  setFilterTodayOnly(false);
-                  setFilterStatus('all');
+                  if (filterUnreadOnly) {
+                    // フィルター解除
+                    setFilterUnreadOnly(false);
+                  } else {
+                    // 未読のみフィルター
+                    setFilterTodayOnly(false);
+                    setFilterStatus('all');
+                    setFilterUnreadOnly(true);
+                  }
                 }}
-                active={false}
+                active={filterUnreadOnly}
               />
               <StatCard
                 title="全受付件数"
@@ -1242,9 +1264,10 @@ export default function Dashboard() {
                 color="blue"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus('all');
                 }}
-                active={filterStatus === 'all' && !filterTodayOnly}
+                active={filterStatus === 'all' && !filterTodayOnly && !filterUnreadOnly}
               />
             </div>
           </div>
@@ -1310,9 +1333,10 @@ export default function Dashboard() {
                 badge={storeStats.pendingCount > 0 ? '要対応' : undefined}
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending');
                 }}
-                active={filterStatus === 'pending' && !filterTodayOnly}
+                active={filterStatus === 'pending' && !filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="未読メッセージ"
@@ -1322,10 +1346,17 @@ export default function Dashboard() {
                 color={storeStats.unreadMessageCount > 0 ? 'red' : 'blue'}
                 badge={storeStats.unreadMessageCount > 0 ? '要確認' : undefined}
                 onClick={() => {
-                  setFilterTodayOnly(false);
-                  setFilterStatus('all');
+                  if (filterUnreadOnly) {
+                    // フィルター解除
+                    setFilterUnreadOnly(false);
+                  } else {
+                    // 未読のみフィルター
+                    setFilterTodayOnly(false);
+                    setFilterStatus('all');
+                    setFilterUnreadOnly(true);
+                  }
                 }}
-                active={false}
+                active={filterUnreadOnly}
               />
               <StatCard
                 title="調剤中"
@@ -1335,9 +1366,10 @@ export default function Dashboard() {
                 color="purple"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing');
                 }}
-                active={filterStatus === 'preparing' && !filterTodayOnly}
+                active={filterStatus === 'preparing' && !filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="準備完了"
@@ -1347,9 +1379,10 @@ export default function Dashboard() {
                 color="green"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready');
                 }}
-                active={filterStatus === 'ready' && !filterTodayOnly}
+                active={filterStatus === 'ready' && !filterTodayOnly && !filterUnreadOnly}
               />
             </div>
             {/* 本日の統計行 */}
@@ -1361,6 +1394,7 @@ export default function Dashboard() {
                 icon="calendar"
                 color="blue"
                 onClick={() => {
+                  setFilterUnreadOnly(false);
                   if (filterTodayOnly) {
                     setFilterTodayOnly(false);
                     setFilterStatus('all');
@@ -1369,7 +1403,7 @@ export default function Dashboard() {
                     setFilterStatus('all');
                   }
                 }}
-                active={filterTodayOnly}
+                active={filterTodayOnly && !filterUnreadOnly}
               />
               <StatCard
                 title="本日の完了"
@@ -1379,6 +1413,7 @@ export default function Dashboard() {
                 color="green"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus('all');
                 }}
                 active={false}
@@ -1393,6 +1428,7 @@ export default function Dashboard() {
                   badge="進行中"
                   onClick={() => {
                     setFilterTodayOnly(false);
+                    setFilterUnreadOnly(false);
                     setFilterStatus('all');
                   }}
                   active={false}
@@ -1406,9 +1442,10 @@ export default function Dashboard() {
                 color="blue"
                 onClick={() => {
                   setFilterTodayOnly(false);
+                  setFilterUnreadOnly(false);
                   setFilterStatus('all');
                 }}
-                active={filterStatus === 'all' && !filterTodayOnly}
+                active={filterStatus === 'all' && !filterTodayOnly && !filterUnreadOnly}
               />
             </div>
             </div>
