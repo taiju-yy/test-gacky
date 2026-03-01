@@ -161,6 +161,72 @@ export interface DashboardStats {
   todayTotal: number;         // 本日合計
 }
 
+// 管理者向けダッシュボード統計（全店舗横断）
+export interface AdminDashboardStats {
+  // 要アクション指標（優先度順）
+  pendingCount: number;           // 受付待ち（店舗未割当）
+  unassignedCount: number;        // 店舗未割当数
+  
+  // 全店舗の進行状況
+  preparingCount: number;         // 対応中（全店舗合計）
+  readyCount: number;             // 準備完了（全店舗合計）
+  shippingCount: number;          // 配送中（全店舗合計）
+  
+  // 本日の統計
+  todayNewCount: number;          // 本日新規受付数
+  todayCompletedCount: number;    // 本日完了数
+  
+  // オプション: 未読メッセージ総数
+  totalUnreadMessages?: number;
+}
+
+// 店舗スタッフ向けダッシュボード統計（担当店舗のみ）
+export interface StoreDashboardStats {
+  // 要アクション指標（優先度順）
+  pendingCount: number;           // 対応待ち（店舗受け取りのみ）
+  unreadMessageCount: number;     // 未読メッセージ数
+  
+  // 進行状況
+  preparingCount: number;         // 対応中
+  readyCount: number;             // 準備完了
+  videoCounselingCount: number;   // オンライン服薬指導中
+  
+  // 本日の統計
+  todayNewCount: number;          // 本日新規受付数
+  todayCompletedCount: number;    // 本日完了数
+}
+
+// 月別統計データ
+export interface MonthlyStatsData {
+  month: string;                  // YYYY-MM形式
+  displayMonth: string;           // 表示用（例: "2026年3月"）
+  totalReceptions: number;        // 総受付数
+  completedCount: number;         // 完了数
+  cancelledCount: number;         // キャンセル数
+  storePickupCount: number;       // 店舗受取数
+  homeDeliveryCount: number;      // 自宅受取数
+  averageProcessingTime?: number; // 平均処理時間（分）
+  
+  // 店舗別内訳（オプション）
+  byStore?: {
+    storeId: string;
+    storeName: string;
+    count: number;
+    completedCount: number;
+  }[];
+}
+
+// 月別統計APIレスポンス
+export interface MonthlyStatsResponse {
+  currentMonth: MonthlyStatsData;
+  previousMonths: MonthlyStatsData[];
+  yearToDate: {
+    totalReceptions: number;
+    completedCount: number;
+    cancelledCount: number;
+  };
+}
+
 // 通知タイプ
 export type NotificationType = 
   | 'new_reception'           // 新規受付

@@ -31,6 +31,32 @@ const LEGACY_STORE_ID_TO_NAME: Record<string, string> = {
   // 必要に応じて追加
 };
 
+// 日本時間の今日の日付範囲を取得
+const getTodayDateRange = (): { startOfDay: string; endOfDay: string; todayStr: string } => {
+  const now = new Date();
+  // JSTでの今日の日付を取得
+  const jstOffset = 9 * 60 * 60 * 1000;
+  const jstNow = new Date(now.getTime() + jstOffset);
+  const todayStr = jstNow.toISOString().split('T')[0];
+  
+  // JSTの今日の0時をUTCで表現
+  const startOfDayJST = new Date(`${todayStr}T00:00:00+09:00`);
+  // JSTの今日の23:59:59をUTCで表現
+  const endOfDayJST = new Date(`${todayStr}T23:59:59+09:00`);
+  
+  return {
+    startOfDay: startOfDayJST.toISOString(),
+    endOfDay: endOfDayJST.toISOString(),
+    todayStr,
+  };
+};
+
+// 受付が今日のものかどうかを判定
+const isToday = (timestamp: string): boolean => {
+  const { startOfDay, endOfDay } = getTodayDateRange();
+  return timestamp >= startOfDay && timestamp <= endOfDay;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -38,11 +64,10 @@ export async function GET(request: NextRequest) {
     const storeId = searchParams.get('storeId');
     const storeName = searchParams.get('storeName'); // 店舗名でのフィルタも対応
     const date = searchParams.get('date'); // YYYY-MM-DD形式
+    const todayOnly = searchParams.get('todayOnly') === 'true'; // 本日のみフィルタ
 
     // 今日の日付を取得（日本時間）
-    const today = new Date();
-    today.setHours(today.getHours() + 9); // JST
-    const todayStr = today.toISOString().split('T')[0];
+    const { todayStr } = getTodayDateRange();
     const targetDate = date || todayStr;
 
     let receptions: any[] = [];
@@ -139,6 +164,12 @@ export async function GET(request: NextRequest) {
       receptions.sort((a, b) => 
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
+    }
+
+    // todayOnlyフィルタが有効な場合、本日の受付のみに絞り込む
+    if (todayOnly) {
+      receptions = receptions.filter((r: any) => isToday(r.timestamp));
+      console.log(`[Receptions API] Filtered to today only: ${receptions.length} receptions`);
     }
 
     // 署名付きURLを再生成（S3の一時クレデンシャル問題対策）

@@ -7,7 +7,8 @@ import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import ReceptionList from '@/components/ReceptionList';
 import ReceptionDetail from '@/components/ReceptionDetail';
-import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
+import MonthlyStats from '@/components/MonthlyStats';
+import { PrescriptionReception, ReceptionStatus, Store, DashboardStats, AdminDashboardStats, StoreDashboardStats, PrescriptionMessage, DeliveryMethod } from '@/types/prescription';
 import { registerServiceWorker } from '@/lib/pushNotification';
 
 const SESSION_TIMEOUT_MINUTES = 30;
@@ -66,6 +67,8 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<Record<string, PrescriptionMessage[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showMonthlyStats, setShowMonthlyStats] = useState(false); // 月別統計モーダル表示
+  const [isStatsCollapsed, setIsStatsCollapsed] = useState(false); // ダッシュボード折りたたみ状態
   
   // SP表示時の詳細パネルへのスクロール用ref
   const detailPanelRef = useRef<HTMLDivElement>(null);
@@ -395,12 +398,71 @@ export default function Dashboard() {
     }
   }, []);
 
-  // 統計計算
+  // 本日の日付範囲を取得（日本時間）
+  const getTodayDateRange = () => {
+    const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000;
+    const jstNow = new Date(now.getTime() + jstOffset);
+    const todayStr = jstNow.toISOString().split('T')[0];
+    
+    const startOfDayJST = new Date(`${todayStr}T00:00:00+09:00`);
+    const endOfDayJST = new Date(`${todayStr}T23:59:59+09:00`);
+    
+    return {
+      startOfDay: startOfDayJST.toISOString(),
+      endOfDay: endOfDayJST.toISOString(),
+    };
+  };
+
+  // 受付が今日のものかどうかを判定
+  const isToday = (timestamp: string): boolean => {
+    const { startOfDay, endOfDay } = getTodayDateRange();
+    return timestamp >= startOfDay && timestamp <= endOfDay;
+  };
+
+  // 管理者向け統計計算
+  const adminStats: AdminDashboardStats = {
+    // 要アクション
+    pendingCount: receptions.filter((r) => r.status === 'pending').length,
+    unassignedCount: receptions.filter((r) => !r.selectedStoreId && r.status !== 'completed' && r.status !== 'cancelled').length,
+    
+    // 進行状況
+    preparingCount: receptions.filter((r) => r.status === 'preparing' || r.status === 'confirmed').length,
+    readyCount: receptions.filter((r) => r.status === 'ready').length,
+    shippingCount: receptions.filter((r) => r.status === 'shipping' || r.status === 'shipped').length,
+    
+    // 本日の統計
+    todayNewCount: receptions.filter((r) => isToday(r.timestamp)).length,
+    todayCompletedCount: receptions.filter((r) => r.status === 'completed' && r.completedAt && isToday(r.completedAt)).length,
+    
+    // 未読メッセージ総数
+    totalUnreadMessages: receptions.reduce((sum, r) => sum + (r.unreadMessageCount || 0), 0),
+  };
+
+  // 店舗スタッフ向け統計計算
+  const storeStats: StoreDashboardStats = {
+    // 要アクション
+    pendingCount: receptions.filter((r) => 
+      (r.status === 'pending' || r.status === 'confirmed') && r.deliveryMethod === 'store'
+    ).length,
+    unreadMessageCount: receptions.reduce((sum, r) => sum + (r.unreadMessageCount || 0), 0),
+    
+    // 進行状況
+    preparingCount: receptions.filter((r) => r.status === 'preparing').length,
+    readyCount: receptions.filter((r) => r.status === 'ready').length,
+    videoCounselingCount: receptions.filter((r) => r.status === 'video_counseling').length,
+    
+    // 本日の統計
+    todayNewCount: receptions.filter((r) => isToday(r.timestamp)).length,
+    todayCompletedCount: receptions.filter((r) => r.status === 'completed' && r.completedAt && isToday(r.completedAt)).length,
+  };
+
+  // 後方互換用の統計（既存のフィルタリング用）
   const stats: DashboardStats = {
     pendingCount: receptions.filter((r) => r.status === 'pending').length,
     preparingCount: receptions.filter((r) => r.status === 'preparing' || r.status === 'confirmed').length,
     readyCount: receptions.filter((r) => r.status === 'ready').length,
-    todayTotal: receptions.length,
+    todayTotal: receptions.filter((r) => isToday(r.timestamp)).length,
   };
 
   // フィルタリングされた受付リスト
@@ -1055,44 +1117,245 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* 統計カード */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard
-            title="受付待ち"
-            value={stats.pendingCount}
-            icon="clock"
-            color="yellow"
-            onClick={() => setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending')}
-            active={filterStatus === 'pending'}
-          />
-          <StatCard
-            title="対応中"
-            value={stats.preparingCount}
-            icon="flask"
-            color="purple"
-            onClick={() => setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing')}
-            active={filterStatus === 'preparing'}
-          />
-          <StatCard
-            title="準備完了"
-            value={stats.readyCount}
-            icon="check"
-            color="green"
-            onClick={() => setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready')}
-            active={filterStatus === 'ready'}
-          />
-          <StatCard
-            title="本日の合計"
-            value={stats.todayTotal}
-            icon="chart"
-            color="blue"
-            onClick={() => setFilterStatus('all')}
-            active={filterStatus === 'all'}
-          />
-        </div>
+        {/* 統計カード - ロール別表示 */}
+        {isAdmin ? (
+          /* 管理者向けダッシュボード */
+          <div className="mb-8 p-1">
+            {/* ヘッダー行 */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-700">ダッシュボード</h2>
+              <button
+                onClick={() => setShowMonthlyStats(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm text-sm font-medium"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                月別統計レポート
+              </button>
+            </div>
+            {/* 要アクション行 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <StatCard
+                title="受付待ち"
+                subtitle="店舗未割当"
+                value={adminStats.pendingCount}
+                icon="clock"
+                color="red"
+                badge={adminStats.pendingCount > 0 ? '要対応' : undefined}
+                onClick={() => setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending')}
+                active={filterStatus === 'pending'}
+              />
+              <StatCard
+                title="対応中"
+                subtitle="全店舗合計"
+                value={adminStats.preparingCount}
+                icon="flask"
+                color="purple"
+                onClick={() => setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing')}
+                active={filterStatus === 'preparing'}
+              />
+              <StatCard
+                title="準備完了"
+                subtitle="全店舗合計"
+                value={adminStats.readyCount}
+                icon="check"
+                color="green"
+                onClick={() => setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready')}
+                active={filterStatus === 'ready'}
+              />
+              <StatCard
+                title="配送中"
+                subtitle="自宅受取"
+                value={adminStats.shippingCount}
+                icon="truck"
+                color="indigo"
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+            </div>
+            {/* 本日の統計行 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard
+                title="本日の新規受付"
+                subtitle="全店舗合計"
+                value={adminStats.todayNewCount}
+                icon="calendar"
+                color="blue"
+                onClick={() => setFilterStatus('all')}
+                active={filterStatus === 'all'}
+              />
+              <StatCard
+                title="本日の完了"
+                subtitle="全店舗合計"
+                value={adminStats.todayCompletedCount}
+                icon="chart"
+                color="green"
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+              <StatCard
+                title="未読メッセージ"
+                subtitle="全店舗合計"
+                value={adminStats.totalUnreadMessages || 0}
+                icon="message"
+                color={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? 'orange' : 'blue'}
+                badge={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? '要確認' : undefined}
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+              <StatCard
+                title="全受付件数"
+                subtitle="表示中"
+                value={receptions.length}
+                icon="store"
+                color="blue"
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+            </div>
+          </div>
+        ) : (
+          /* 店舗スタッフ向けダッシュボード（折りたたみ可能） */
+          <div className="mb-4">
+            {/* ヘッダー（常に表示） */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => setIsStatsCollapsed(!isStatsCollapsed)}
+                className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  className={`h-5 w-5 transition-transform duration-200 ${isStatsCollapsed ? '' : 'rotate-90'}`}
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="font-semibold">ダッシュボード</span>
+                {isStatsCollapsed && (
+                  <span className="text-sm text-gray-500 font-normal">
+                    （対応待ち: {storeStats.pendingCount} / 未読: {storeStats.unreadMessageCount}）
+                  </span>
+                )}
+              </button>
+              
+              {/* 折りたたみ時のクイックサマリーバッジ */}
+              {isStatsCollapsed && (storeStats.pendingCount > 0 || storeStats.unreadMessageCount > 0) && (
+                <div className="flex gap-2">
+                  {storeStats.pendingCount > 0 && (
+                    <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">
+                      要対応 {storeStats.pendingCount}
+                    </span>
+                  )}
+                  {storeStats.unreadMessageCount > 0 && (
+                    <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full font-medium">
+                      未読 {storeStats.unreadMessageCount}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* 折りたたみ可能な統計カード部分 */}
+            <div 
+              className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                isStatsCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+              }`}
+            >
+              {/* ringボーダーが見切れないようにpadding追加 */}
+              <div className="p-1">
+              {/* 要アクション行 */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <StatCard
+                title="対応待ち"
+                subtitle="店舗受取のみ"
+                value={storeStats.pendingCount}
+                icon="clock"
+                color="yellow"
+                badge={storeStats.pendingCount > 0 ? '要対応' : undefined}
+                onClick={() => setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending')}
+                active={filterStatus === 'pending'}
+              />
+              <StatCard
+                title="未読メッセージ"
+                subtitle="お客様から"
+                value={storeStats.unreadMessageCount}
+                icon="message"
+                color={storeStats.unreadMessageCount > 0 ? 'red' : 'blue'}
+                badge={storeStats.unreadMessageCount > 0 ? '要確認' : undefined}
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+              <StatCard
+                title="調剤中"
+                subtitle="対応中"
+                value={storeStats.preparingCount}
+                icon="flask"
+                color="purple"
+                onClick={() => setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing')}
+                active={filterStatus === 'preparing'}
+              />
+              <StatCard
+                title="準備完了"
+                subtitle="受取待ち"
+                value={storeStats.readyCount}
+                icon="check"
+                color="green"
+                onClick={() => setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready')}
+                active={filterStatus === 'ready'}
+              />
+            </div>
+            {/* 本日の統計行 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard
+                title="本日の新規受付"
+                subtitle="自店舗"
+                value={storeStats.todayNewCount}
+                icon="calendar"
+                color="blue"
+                onClick={() => setFilterStatus('all')}
+                active={filterStatus === 'all'}
+              />
+              <StatCard
+                title="本日の完了"
+                subtitle="自店舗"
+                value={storeStats.todayCompletedCount}
+                icon="chart"
+                color="green"
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+              {storeStats.videoCounselingCount > 0 && (
+                <StatCard
+                  title="オンライン服薬指導"
+                  subtitle="対応中"
+                  value={storeStats.videoCounselingCount}
+                  icon="video"
+                  color="pink"
+                  badge="進行中"
+                  onClick={() => setFilterStatus('all')}
+                  active={false}
+                />
+              )}
+              <StatCard
+                title="全受付件数"
+                subtitle="表示中"
+                value={receptions.length}
+                icon="store"
+                color="blue"
+                onClick={() => setFilterStatus('all')}
+                active={false}
+              />
+            </div>
+            </div>
+            </div>
+          </div>
+        )}
 
         {/* メインコンテンツ - PCでは左右独立スクロール */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:h-[calc(100vh-280px)]">
+        <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${isStatsCollapsed && !isAdmin ? 'lg:h-[calc(100vh-180px)]' : 'lg:h-[calc(100vh-280px)]'}`}>
           {/* 受付リスト - PC表示時は独立スクロール */}
           <div className="lg:overflow-y-auto lg:h-full">
             <ReceptionList
@@ -1184,6 +1447,14 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* 月別統計モーダル（管理者のみ） */}
+      {isAdmin && (
+        <MonthlyStats
+          isVisible={showMonthlyStats}
+          onClose={() => setShowMonthlyStats(false)}
+        />
+      )}
     </div>
   );
 }
