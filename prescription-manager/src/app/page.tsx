@@ -64,6 +64,7 @@ export default function Dashboard() {
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedReception, setSelectedReception] = useState<PrescriptionReception | null>(null);
   const [filterStatus, setFilterStatus] = useState<ReceptionStatus | 'all'>('all');
+  const [filterTodayOnly, setFilterTodayOnly] = useState(false); // 本日のみフィルター
   const [messages, setMessages] = useState<Record<string, PrescriptionMessage[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -466,15 +467,21 @@ export default function Dashboard() {
   };
 
   // フィルタリングされた受付リスト
-  const filteredReceptions =
-    filterStatus === 'all'
-      ? receptions
-      : receptions.filter((r) => {
-          if (filterStatus === 'preparing') {
-            return r.status === 'preparing' || r.status === 'confirmed';
-          }
-          return r.status === filterStatus;
-        });
+  const filteredReceptions = receptions.filter((r) => {
+    // 本日のみフィルターが有効な場合
+    if (filterTodayOnly && !isToday(r.timestamp)) {
+      return false;
+    }
+    
+    // ステータスフィルター
+    if (filterStatus === 'all') {
+      return true;
+    }
+    if (filterStatus === 'preparing') {
+      return r.status === 'preparing' || r.status === 'confirmed';
+    }
+    return r.status === filterStatus;
+  });
 
   // 選択中の受付のメッセージを取得
   const selectedReceptionMessages = selectedReception
@@ -1143,8 +1150,11 @@ export default function Dashboard() {
                 icon="clock"
                 color="red"
                 badge={adminStats.pendingCount > 0 ? '要対応' : undefined}
-                onClick={() => setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending')}
-                active={filterStatus === 'pending'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending');
+                }}
+                active={filterStatus === 'pending' && !filterTodayOnly}
               />
               <StatCard
                 title="対応中"
@@ -1152,8 +1162,11 @@ export default function Dashboard() {
                 value={adminStats.preparingCount}
                 icon="flask"
                 color="purple"
-                onClick={() => setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing')}
-                active={filterStatus === 'preparing'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing');
+                }}
+                active={filterStatus === 'preparing' && !filterTodayOnly}
               />
               <StatCard
                 title="準備完了"
@@ -1161,8 +1174,11 @@ export default function Dashboard() {
                 value={adminStats.readyCount}
                 icon="check"
                 color="green"
-                onClick={() => setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready')}
-                active={filterStatus === 'ready'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready');
+                }}
+                active={filterStatus === 'ready' && !filterTodayOnly}
               />
               <StatCard
                 title="配送中"
@@ -1170,7 +1186,10 @@ export default function Dashboard() {
                 value={adminStats.shippingCount}
                 icon="truck"
                 color="indigo"
-                onClick={() => setFilterStatus('all')}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
                 active={false}
               />
             </div>
@@ -1182,8 +1201,16 @@ export default function Dashboard() {
                 value={adminStats.todayNewCount}
                 icon="calendar"
                 color="blue"
-                onClick={() => setFilterStatus('all')}
-                active={filterStatus === 'all'}
+                onClick={() => {
+                  if (filterTodayOnly) {
+                    setFilterTodayOnly(false);
+                    setFilterStatus('all');
+                  } else {
+                    setFilterTodayOnly(true);
+                    setFilterStatus('all');
+                  }
+                }}
+                active={filterTodayOnly}
               />
               <StatCard
                 title="本日の完了"
@@ -1201,7 +1228,10 @@ export default function Dashboard() {
                 icon="message"
                 color={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? 'orange' : 'blue'}
                 badge={adminStats.totalUnreadMessages && adminStats.totalUnreadMessages > 0 ? '要確認' : undefined}
-                onClick={() => setFilterStatus('all')}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
                 active={false}
               />
               <StatCard
@@ -1210,8 +1240,11 @@ export default function Dashboard() {
                 value={receptions.length}
                 icon="store"
                 color="blue"
-                onClick={() => setFilterStatus('all')}
-                active={false}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
+                active={filterStatus === 'all' && !filterTodayOnly}
               />
             </div>
           </div>
@@ -1275,8 +1308,11 @@ export default function Dashboard() {
                 icon="clock"
                 color="yellow"
                 badge={storeStats.pendingCount > 0 ? '要対応' : undefined}
-                onClick={() => setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending')}
-                active={filterStatus === 'pending'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'pending' ? 'all' : 'pending');
+                }}
+                active={filterStatus === 'pending' && !filterTodayOnly}
               />
               <StatCard
                 title="未読メッセージ"
@@ -1285,7 +1321,10 @@ export default function Dashboard() {
                 icon="message"
                 color={storeStats.unreadMessageCount > 0 ? 'red' : 'blue'}
                 badge={storeStats.unreadMessageCount > 0 ? '要確認' : undefined}
-                onClick={() => setFilterStatus('all')}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
                 active={false}
               />
               <StatCard
@@ -1294,8 +1333,11 @@ export default function Dashboard() {
                 value={storeStats.preparingCount}
                 icon="flask"
                 color="purple"
-                onClick={() => setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing')}
-                active={filterStatus === 'preparing'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'preparing' ? 'all' : 'preparing');
+                }}
+                active={filterStatus === 'preparing' && !filterTodayOnly}
               />
               <StatCard
                 title="準備完了"
@@ -1303,8 +1345,11 @@ export default function Dashboard() {
                 value={storeStats.readyCount}
                 icon="check"
                 color="green"
-                onClick={() => setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready')}
-                active={filterStatus === 'ready'}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus(filterStatus === 'ready' ? 'all' : 'ready');
+                }}
+                active={filterStatus === 'ready' && !filterTodayOnly}
               />
             </div>
             {/* 本日の統計行 */}
@@ -1315,8 +1360,16 @@ export default function Dashboard() {
                 value={storeStats.todayNewCount}
                 icon="calendar"
                 color="blue"
-                onClick={() => setFilterStatus('all')}
-                active={filterStatus === 'all'}
+                onClick={() => {
+                  if (filterTodayOnly) {
+                    setFilterTodayOnly(false);
+                    setFilterStatus('all');
+                  } else {
+                    setFilterTodayOnly(true);
+                    setFilterStatus('all');
+                  }
+                }}
+                active={filterTodayOnly}
               />
               <StatCard
                 title="本日の完了"
@@ -1324,7 +1377,10 @@ export default function Dashboard() {
                 value={storeStats.todayCompletedCount}
                 icon="chart"
                 color="green"
-                onClick={() => setFilterStatus('all')}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
                 active={false}
               />
               {storeStats.videoCounselingCount > 0 && (
@@ -1335,7 +1391,10 @@ export default function Dashboard() {
                   icon="video"
                   color="pink"
                   badge="進行中"
-                  onClick={() => setFilterStatus('all')}
+                  onClick={() => {
+                    setFilterTodayOnly(false);
+                    setFilterStatus('all');
+                  }}
                   active={false}
                 />
               )}
@@ -1345,8 +1404,11 @@ export default function Dashboard() {
                 value={receptions.length}
                 icon="store"
                 color="blue"
-                onClick={() => setFilterStatus('all')}
-                active={false}
+                onClick={() => {
+                  setFilterTodayOnly(false);
+                  setFilterStatus('all');
+                }}
+                active={filterStatus === 'all' && !filterTodayOnly}
               />
             </div>
             </div>
