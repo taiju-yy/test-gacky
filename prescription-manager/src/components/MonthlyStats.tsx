@@ -267,35 +267,47 @@ export default function MonthlyStats({ isVisible, onClose }: MonthlyStatsProps) 
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">月別受付数の推移</h3>
                 <div className="bg-white rounded-xl p-4 shadow-sm">
-                  <div className="flex items-end justify-between h-40 space-x-2">
-                    {[...stats.previousMonths].reverse().concat([stats.currentMonth]).map((month) => {
-                      const maxCount = Math.max(
-                        stats.currentMonth.totalReceptions,
-                        ...stats.previousMonths.map((m) => m.totalReceptions)
-                      );
-                      const heightPercent = maxCount > 0 ? (month.totalReceptions / maxCount) * 100 : 0;
-                      
-                      return (
-                        <div key={month.month} className="flex-1 flex flex-col items-center">
-                          <div 
-                            className={`w-full rounded-t transition-all ${
-                              month.month === stats.currentMonth.month
-                                ? 'bg-blue-500'
-                                : 'bg-blue-200'
-                            }`}
-                            style={{ height: `${Math.max(heightPercent, 5)}%` }}
-                          >
-                            <div className="text-center text-xs text-white font-medium pt-1">
-                              {month.totalReceptions > 0 && month.totalReceptions}
+                  {(() => {
+                    const allMonths = [...stats.previousMonths].reverse().concat([stats.currentMonth]);
+                    const maxCount = Math.max(...allMonths.map((m) => m.totalReceptions), 1);
+                    const chartHeight = 140; // px
+                    
+                    return (
+                      <div className="flex items-end justify-between space-x-2" style={{ height: `${chartHeight + 30}px` }}>
+                        {allMonths.map((month) => {
+                          const barHeight = maxCount > 0 
+                            ? Math.max((month.totalReceptions / maxCount) * chartHeight, month.totalReceptions > 0 ? 20 : 4)
+                            : 4;
+                          
+                          return (
+                            <div key={month.month} className="flex-1 flex flex-col items-center justify-end h-full">
+                              <div className="flex flex-col items-center justify-end" style={{ height: `${chartHeight}px` }}>
+                                <div 
+                                  className={`w-full rounded-t transition-all flex items-start justify-center ${
+                                    month.month === stats.currentMonth.month
+                                      ? 'bg-blue-500'
+                                      : 'bg-blue-200'
+                                  }`}
+                                  style={{ height: `${barHeight}px`, minWidth: '30px' }}
+                                >
+                                  {month.totalReceptions > 0 && (
+                                    <span className={`text-xs font-bold mt-1 ${
+                                      month.month === stats.currentMonth.month ? 'text-white' : 'text-blue-700'
+                                    }`}>
+                                      {month.totalReceptions}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-2 text-center">
+                                {month.displayMonth.replace(/\d+年/, '')}
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-2 text-center">
-                            {month.displayMonth.replace(/\d+年/, '')}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
